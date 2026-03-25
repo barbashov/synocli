@@ -28,6 +28,10 @@ type loginResponse struct {
 	Error *ErrorResponse `json:"error,omitempty"`
 }
 
+// Login authenticates with the Synology DSM API.
+// NOTE: The Synology API requires credentials as GET query parameters.
+// This means the password will appear in server access logs and proxy logs.
+// The debug transport redacts these values, but network intermediaries may not.
 func (c *Client) Login(ctx context.Context, user, password string) (string, error) {
 	vals := url.Values{}
 	vals.Set("api", "SYNO.API.Auth")

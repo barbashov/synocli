@@ -238,7 +238,7 @@ func newDSDeleteCmd(ac *appContext) *cobra.Command {
 func actionWithIDs(ac *appContext, action string, run func(context.Context, *session, []string) error) *cobra.Command {
 	return &cobra.Command{
 		Use:   fmt.Sprintf("%s <endpoint> <task-id> [<task-id>...]", action),
-		Short: strings.Title(action) + " tasks",
+		Short: strings.ToUpper(action[:1]) + action[1:] + " tasks",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			endpoint := args[0]
@@ -316,8 +316,7 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			endpoint := args[0]
-			start := time.Now()
-			return ac.withSession(cmd, endpoint, joinCommand("ds", "watch"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withStreamingSession(cmd, endpoint, joinCommand("ds", "watch"), func(ctx context.Context, s *session) error {
 				statusSet := make(map[string]struct{}, len(statuses))
 				for _, st := range statuses {
 					statusSet[strings.ToLower(st)] = struct{}{}
@@ -329,15 +328,15 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 				for {
 					tasks, err := s.dsClient.List(ctx, s.sid)
 					if err != nil {
-						return nil, err
+						return err
 					}
 					filtered := filterTasks(tasks, idSet, statusSet)
 					if ac.opts.JSON {
-						env := output.NewEnvelope(true, joinCommand("ds", "watch"), s.endpoint, start)
+						env := output.NewEnvelope(true, joinCommand("ds", "watch"), s.endpoint, s.start)
 						env.Meta.APIVersion = s.apiVersions
 						env.Data = map[string]any{"event": "snapshot", "tasks": mapTasks(filtered)}
 						if err := output.WriteJSONLine(ac.out, env); err != nil {
-							return nil, err
+							return err
 						}
 					} else {
 						fmt.Fprintf(ac.out, "[%s] tasks=%d\n", time.Now().Format(time.RFC3339), len(filtered))
@@ -349,7 +348,7 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 					}
 					select {
 					case <-ctx.Done():
-						return nil, ctx.Err()
+						return ctx.Err()
 					case <-time.After(interval):
 					}
 				}

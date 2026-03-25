@@ -1,6 +1,9 @@
 package apperr
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type Error struct {
 	Code     string
@@ -20,6 +23,10 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
+func (e *Error) Unwrap() error {
+	return e.Err
+}
+
 func Wrap(code, message string, exitCode int, err error) *Error {
 	return &Error{Code: code, Message: message, ExitCode: exitCode, Err: err}
 }
@@ -30,7 +37,7 @@ func New(code, message string, exitCode int) *Error {
 
 func ExitCode(err error) int {
 	var app *Error
-	if ok := As(err, &app); ok {
+	if errors.As(err, &app) {
 		if app.ExitCode > 0 {
 			return app.ExitCode
 		}
@@ -40,7 +47,7 @@ func ExitCode(err error) int {
 
 func Code(err error) string {
 	var app *Error
-	if ok := As(err, &app); ok && app.Code != "" {
+	if errors.As(err, &app) && app.Code != "" {
 		return app.Code
 	}
 	return "internal_error"
@@ -48,23 +55,8 @@ func Code(err error) string {
 
 func Details(err error) map[string]any {
 	var app *Error
-	if ok := As(err, &app); ok {
+	if errors.As(err, &app) {
 		return app.Details
 	}
 	return nil
-}
-
-func As(err error, target **Error) bool {
-	if err == nil {
-		return false
-	}
-	if e, ok := err.(*Error); ok {
-		*target = e
-		return true
-	}
-	type unwrapper interface{ Unwrap() error }
-	if u, ok := err.(unwrapper); ok {
-		return As(u.Unwrap(), target)
-	}
-	return false
 }

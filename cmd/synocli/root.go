@@ -64,7 +64,24 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	return cmd
 }
 
+// withSession creates an authenticated session with Download Station client and handles output.
 func (a *appContext) withSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) (any, error)) error {
+	return a.doSession(cmd, endpointRaw, commandName, true, fn)
+}
+
+// withAuthSession creates an authenticated session without Download Station client setup.
+func (a *appContext) withAuthSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) (any, error)) error {
+	return a.doSession(cmd, endpointRaw, commandName, false, fn)
+}
+
+// withStreamingSession creates a session for streaming commands that handle their own output.
+func (a *appContext) withStreamingSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) error) error {
+	return a.doSession(cmd, endpointRaw, commandName, true, func(ctx context.Context, s *session) (any, error) {
+		return nil, fn(ctx, s)
+	})
+}
+
+func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName string, needsDS bool, fn func(context.Context, *session) (any, error)) error {
 	start := time.Now()
 	u, err := config.ValidateEndpoint(endpointRaw)
 	if err != nil {
@@ -88,18 +105,35 @@ func (a *appContext) withSession(cmd *cobra.Command, endpointRaw, commandName st
 		entries = map[string]apiinfo.Entry{}
 	}
 	authPath, authVersion := apiinfo.Select(entries, "SYNO.API.Auth", "/webapi/auth.cgi", 6)
-	dsAPIName, dsPath, dsVersion, dsListAPIName, dsListPath, dsListVersion := selectDownloadStationAPIs(entries)
 	authVersion = clampVersion(authVersion, 6)
-	dsVersion = clampVersion(dsVersion, 3)
-	if dsListVersion > 0 {
-		dsListVersion = clampVersion(dsListVersion, 3)
-	}
-	if a.opts.Debug {
-		fmt.Fprintf(a.err, "[debug] selected task api=%s path=%s version=%d\n", dsAPIName, dsPath, dsVersion)
-		if dsListAPIName != "" {
-			fmt.Fprintf(a.err, "[debug] selected task-list api=%s path=%s version=%d\n", dsListAPIName, dsListPath, dsListVersion)
+
+	apiVersions := map[string]int{"auth": authVersion}
+	var dsClient *downloadstation.Client
+	if needsDS {
+		dsAPIName, dsPath, dsVersion, dsListAPIName, dsListPath, dsListVersion := selectDownloadStationAPIs(entries)
+		dsVersion = clampVersion(dsVersion, 3)
+		if dsListVersion > 0 {
+			dsListVersion = clampVersion(dsListVersion, 3)
 		}
+		if a.opts.Debug {
+			fmt.Fprintf(a.err, "[debug] selected task api=%s path=%s version=%d\n", dsAPIName, dsPath, dsVersion)
+			if dsListAPIName != "" {
+				fmt.Fprintf(a.err, "[debug] selected task-list api=%s path=%s version=%d\n", dsListAPIName, dsListPath, dsListVersion)
+			}
+		}
+		dsClient = &downloadstation.Client{
+			Endpoint:    u.String(),
+			Path:        dsPath,
+			Version:     dsVersion,
+			APIName:     dsAPIName,
+			ListPath:    dsListPath,
+			ListVersion: dsListVersion,
+			ListAPIName: dsListAPIName,
+			HTTP:        hc,
+		}
+		apiVersions["task"] = dsVersion
 	}
+
 	authClient := &auth.Client{Endpoint: u.String(), Path: authPath, Version: authVersion, HTTP: hc}
 	sid, err := authClient.Login(ctx, a.opts.User, a.opts.Password)
 	if err != nil {
@@ -109,37 +143,25 @@ func (a *appContext) withSession(cmd *cobra.Command, endpointRaw, commandName st
 		_ = authClient.Logout(context.Background(), sid)
 	}()
 	s := &session{
-		endpoint:   u.String(),
-		start:      start,
-		authClient: authClient,
-		dsClient: &downloadstation.Client{
-			Endpoint:    u.String(),
-			Path:        dsPath,
-			Version:     dsVersion,
-			APIName:     dsAPIName,
-			ListPath:    dsListPath,
-			ListVersion: dsListVersion,
-			ListAPIName: dsListAPIName,
-			HTTP:        hc,
-		},
-		sid: sid,
-		apiVersions: map[string]int{
-			"auth": authVersion,
-			"task": dsVersion,
-		},
+		endpoint:    u.String(),
+		start:       start,
+		authClient:  authClient,
+		dsClient:    dsClient,
+		sid:         sid,
+		apiVersions: apiVersions,
 	}
 	data, err := fn(ctx, s)
 	if err != nil {
 		return a.outputError(commandName, u.String(), start, toAppError(err))
 	}
+	if data == nil {
+		return nil
+	}
 	env := output.NewEnvelope(true, commandName, u.String(), start)
 	env.Data = data
 	env.Meta.APIVersion = s.apiVersions
-	if a.opts.JSON {
-		if err := output.WriteJSON(a.out, env); err != nil {
-			return apperr.Wrap("internal_error", "write json output", 1, err)
-		}
-		return nil
+	if err := output.WriteJSON(a.out, env); err != nil {
+		return apperr.Wrap("internal_error", "write json output", 1, err)
 	}
 	return nil
 }

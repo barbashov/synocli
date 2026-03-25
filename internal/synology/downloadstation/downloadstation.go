@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -139,28 +140,29 @@ type createResponse struct {
 	} `json:"data"`
 }
 
+var errorMessages = map[int]string{
+	100: "unknown error",
+	101: "invalid parameter",
+	102: "api does not exist",
+	103: "method does not exist",
+	104: "this API version is not supported",
+	105: "insufficient user privilege",
+	106: "session timeout",
+	107: "session interrupted by duplicate login",
+	400: "invalid parameter of task",
+	401: "unknown task",
+	402: "invalid task id",
+	403: "file upload failed",
+	404: "max number of tasks reached",
+	405: "destination denied",
+	406: "destination does not exist",
+	407: "invalid task action",
+	408: "unsupported protocol type",
+	120: "required parameter missing",
+}
+
 func ErrorMessage(code int) string {
-	m := map[int]string{
-		100: "unknown error",
-		101: "invalid parameter",
-		102: "api does not exist",
-		103: "method does not exist",
-		104: "this API version is not supported",
-		105: "insufficient user privilege",
-		106: "session timeout",
-		107: "session interrupted by duplicate login",
-		400: "invalid parameter of task",
-		401: "unknown task",
-		402: "invalid task id",
-		403: "file upload failed",
-		404: "max number of tasks reached",
-		405: "destination denied",
-		406: "destination does not exist",
-		407: "invalid task action",
-		408: "unsupported protocol type",
-		120: "required parameter missing",
-	}
-	if v, ok := m[code]; ok {
+	if v, ok := errorMessages[code]; ok {
 		return v
 	}
 	return "unmapped"
@@ -289,6 +291,57 @@ func IsTerminalFailure(normalized string) bool {
 	return normalized == "error"
 }
 
+// --- Torrent multipart helpers ---
+
+func openAndStatTorrent(path string) (*os.File, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, fmt.Errorf("open torrent file: %w", err)
+	}
+	st, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, 0, fmt.Errorf("stat torrent file: %w", err)
+	}
+	return f, st.Size(), nil
+}
+
+func buildTorrentMultipart(r io.Reader, textFields [][2]string, fileFieldName, fileName string) (*bytes.Buffer, string, error) {
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	for _, kv := range textFields {
+		if err := mw.WriteField(kv[0], kv[1]); err != nil {
+			return nil, "", err
+		}
+	}
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fileFieldName, fileName))
+	h.Set("Content-Type", "application/x-bittorrent")
+	part, err := mw.CreatePart(h)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := io.Copy(part, r); err != nil {
+		return nil, "", err
+	}
+	if err := mw.Close(); err != nil {
+		return nil, "", err
+	}
+	return body, mw.FormDataContentType(), nil
+}
+
+func (c *Client) postTorrent(ctx context.Context, sid, reqURL string, body *bytes.Buffer, contentType string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, body)
+	if err != nil {
+		return nil, fmt.Errorf("build torrent request: %w", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.AddCookie(&http.Cookie{Name: "id", Value: sid})
+	return c.HTTP.Do(req)
+}
+
+// --- Download operations ---
+
 func (c *Client) AddURI(ctx context.Context, sid, uri, destination string) ([]string, error) {
 	vals := c.baseValues(sid)
 	vals.Set("method", "create")
@@ -351,7 +404,7 @@ func (c *Client) addTorrentWithFallback(ctx context.Context, sid, torrentPath, d
 				if err := c.addTorrentWithField(ctx, sid, torrentPath, destination, field, mode, filename); err != nil {
 					lastErr = err
 					var apiErr *APIError
-					if errorsAs(err, &apiErr) && (apiErr.Code == 101 || apiErr.Code == 400 || apiErr.Code == 403) {
+					if errors.As(err, &apiErr) && (apiErr.Code == 101 || apiErr.Code == 400 || apiErr.Code == 403) {
 						continue
 					}
 					return err
@@ -361,8 +414,8 @@ func (c *Client) addTorrentWithFallback(ctx context.Context, sid, torrentPath, d
 		}
 	}
 	// Compatibility fallback based on known working community implementation.
-	if err := c.addTorrentCreateListStyle(ctx, sid, torrentPath, destination); err != nil {
-		lastErr = err
+	if err := c.addTorrentCreateListStyle(ctx, sid, torrentPath, destination); err == nil {
+		return nil
 	}
 	return lastErr
 }
@@ -412,8 +465,7 @@ func (c *Client) addTorrentWithField(ctx context.Context, sid, torrentPath, dest
 		return fmt.Errorf("open torrent file: %w", err)
 	}
 	defer f.Close()
-	body := &bytes.Buffer{}
-	mw := multipart.NewWriter(body)
+
 	vals := c.baseValues(sid)
 	vals.Set("method", "create")
 	if destination != "" {
@@ -422,58 +474,37 @@ func (c *Client) addTorrentWithField(ctx context.Context, sid, torrentPath, dest
 	// Synology officially documents two valid multipart strategies:
 	// 1) file as the only POST data; all other params in query
 	// 2) all params in POST data, with file part as the LAST parameter
+	var textFields [][2]string
 	if mode == "post_only" {
 		for _, key := range []string{"api", "version", "method", "_sid", "destination"} {
 			if v := vals.Get(key); v != "" {
-				if err := mw.WriteField(key, v); err != nil {
-					return err
-				}
+				textFields = append(textFields, [2]string{key, v})
 			}
 		}
 	}
-	h := make(textproto.MIMEHeader)
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, filename))
-	h.Set("Content-Type", "application/x-bittorrent")
-	part, err := mw.CreatePart(h)
+	body, contentType, err := buildTorrentMultipart(f, textFields, fieldName, filename)
 	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(part, f); err != nil {
-		return err
-	}
-	if err := mw.Close(); err != nil {
 		return err
 	}
 	u := c.Endpoint + c.Path
 	if mode == "query_only" {
 		u += "?" + vals.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, body)
+	resp, err := c.postTorrent(ctx, sid, u, body, contentType)
 	if err != nil {
-		return fmt.Errorf("build torrent request: %w", err)
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.AddCookie(&http.Cookie{Name: "id", Value: sid})
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return fmt.Errorf("send torrent request: %w", err)
+		return err
 	}
 	defer resp.Body.Close()
 	return decodeBase(resp.Body)
 }
 
 func (c *Client) addTorrentCreateListStyle(ctx context.Context, sid, torrentPath, destination string) error {
-	f, err := os.Open(torrentPath)
+	f, size, err := openAndStatTorrent(torrentPath)
 	if err != nil {
-		return fmt.Errorf("open torrent file: %w", err)
+		return err
 	}
 	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return fmt.Errorf("stat torrent file: %w", err)
-	}
-	body := &bytes.Buffer{}
-	mw := multipart.NewWriter(body)
+
 	apiName := c.apiName()
 	// Keep this field set matching the proven reference implementation shape.
 	fields := [][2]string{
@@ -483,27 +514,13 @@ func (c *Client) addTorrentCreateListStyle(ctx context.Context, sid, torrentPath
 		{"type", "\"file\""},
 		{"file", "[\"torrent\"]"},
 		{"create_list", "true"},
-		{"size", strconv.FormatInt(st.Size(), 10)},
+		{"size", strconv.FormatInt(size, 10)},
 	}
 	if destination != "" {
 		fields = append(fields, [2]string{"destination", "\"" + destination + "\""})
 	}
-	for _, kv := range fields {
-		if err := mw.WriteField(kv[0], kv[1]); err != nil {
-			return err
-		}
-	}
-	h := make(textproto.MIMEHeader)
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, "torrent", filepath.Base(torrentPath)))
-	h.Set("Content-Type", "application/x-bittorrent")
-	part, err := mw.CreatePart(h)
+	body, contentType, err := buildTorrentMultipart(f, fields, "torrent", filepath.Base(torrentPath))
 	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(part, f); err != nil {
-		return err
-	}
-	if err := mw.Close(); err != nil {
 		return err
 	}
 	q := url.Values{}
@@ -513,145 +530,21 @@ func (c *Client) addTorrentCreateListStyle(ctx context.Context, sid, torrentPath
 	if strings.HasSuffix(c.Path, "/task.cgi") {
 		u += "/" + apiName
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u+"?"+q.Encode(), body)
-	if err != nil {
-		return fmt.Errorf("build torrent create_list request: %w", err)
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.AddCookie(&http.Cookie{Name: "id", Value: sid})
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return fmt.Errorf("send torrent create_list request: %w", err)
-	}
-	defer resp.Body.Close()
-	return decodeBase(resp.Body)
-}
-
-func (c *Client) addTorrentDS2Style(ctx context.Context, sid, torrentPath, destination string) error {
-	if err := c.addTorrentDS2ReferenceStyle(ctx, sid, torrentPath, destination); err == nil {
-		return nil
-	}
-	// DS2 entry.cgi often validates core params from query/body params, not multipart text parts.
-	variants := []struct {
-		name   string
-		params map[string]string
-		fields map[string]string
-	}{
-		{
-			name: "ds2-query-type",
-			params: map[string]string{
-				"type":        "file",
-				"create_list": "true",
-			},
-			fields: map[string]string{},
-		},
-		{
-			name: "ds2-query-type-file-ref",
-			params: map[string]string{
-				"type":        "file",
-				"file":        "[\"torrent\"]",
-				"create_list": "true",
-				"size":        "",
-			},
-			fields: map[string]string{},
-		},
-		{
-			name: "ds2-query-type-form-fallback",
-			params: map[string]string{
-				"type":        "file",
-				"create_list": "true",
-			},
-			fields: map[string]string{
-				"file": "[\"torrent\"]",
-			},
-		},
-	}
-	var lastErr error
-	for _, v := range variants {
-		if err := c.addTorrentDS2StyleVariant(ctx, sid, torrentPath, destination, v.params, v.fields); err != nil {
-			lastErr = err
-			var apiErr *APIError
-			if errorsAs(err, &apiErr) && (apiErr.Code == 101 || apiErr.Code == 120 || apiErr.Code == 400 || apiErr.Code == 403) {
-				continue
-			}
-			return err
-		}
-		return nil
-	}
-	return lastErr
-}
-
-func (c *Client) addTorrentDS2ReferenceStyle(ctx context.Context, sid, torrentPath, destination string) error {
-	f, err := os.Open(torrentPath)
-	if err != nil {
-		return fmt.Errorf("open torrent file: %w", err)
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return fmt.Errorf("stat torrent file: %w", err)
-	}
-	body := &bytes.Buffer{}
-	mw := multipart.NewWriter(body)
-	apiName := c.apiName()
-	fields := [][2]string{
-		{"api", apiName},
-		{"method", "create"},
-		{"version", strconv.Itoa(c.Version)},
-		{"type", "\"file\""},
-		{"file", "[\"torrent\"]"},
-		{"create_list", "true"},
-		{"size", strconv.FormatInt(st.Size(), 10)},
-	}
-	if destination != "" {
-		fields = append(fields, [2]string{"destination", "\"" + destination + "\""})
-	}
-	for _, kv := range fields {
-		if err := mw.WriteField(kv[0], kv[1]); err != nil {
-			return err
-		}
-	}
-	h := make(textproto.MIMEHeader)
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, "torrent", filepath.Base(torrentPath)))
-	h.Set("Content-Type", "application/x-bittorrent")
-	part, err := mw.CreatePart(h)
+	resp, err := c.postTorrent(ctx, sid, u+"?"+q.Encode(), body, contentType)
 	if err != nil {
 		return err
-	}
-	if _, err := io.Copy(part, f); err != nil {
-		return err
-	}
-	if err := mw.Close(); err != nil {
-		return err
-	}
-	q := url.Values{}
-	q.Set("_sid", sid)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Endpoint+c.Path+"/"+apiName+"?"+q.Encode(), body)
-	if err != nil {
-		return fmt.Errorf("build ds2 reference torrent request: %w", err)
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.AddCookie(&http.Cookie{Name: "id", Value: sid})
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return fmt.Errorf("send ds2 reference torrent request: %w", err)
 	}
 	defer resp.Body.Close()
 	return decodeBase(resp.Body)
 }
 
 func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, destination string) ([]string, []string, error) {
-	f, err := os.Open(torrentPath)
+	f, size, err := openAndStatTorrent(torrentPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open torrent file: %w", err)
+		return nil, nil, err
 	}
 	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return nil, nil, fmt.Errorf("stat torrent file: %w", err)
-	}
-	body := &bytes.Buffer{}
-	mw := multipart.NewWriter(body)
+
 	apiName := c.apiName()
 	fields := [][2]string{
 		{"api", apiName},
@@ -660,109 +553,23 @@ func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, dest
 		{"type", "\"file\""},
 		{"file", "[\"torrent\"]"},
 		{"create_list", "false"},
-		{"size", strconv.FormatInt(st.Size(), 10)},
+		{"size", strconv.FormatInt(size, 10)},
 	}
 	if destination != "" {
 		fields = append(fields, [2]string{"destination", "\"" + destination + "\""})
 	}
-	for _, kv := range fields {
-		if err := mw.WriteField(kv[0], kv[1]); err != nil {
-			return nil, nil, err
-		}
-	}
-	h := make(textproto.MIMEHeader)
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, "torrent", filepath.Base(torrentPath)))
-	h.Set("Content-Type", "application/x-bittorrent")
-	part, err := mw.CreatePart(h)
+	body, contentType, err := buildTorrentMultipart(f, fields, "torrent", filepath.Base(torrentPath))
 	if err != nil {
-		return nil, nil, err
-	}
-	if _, err := io.Copy(part, f); err != nil {
-		return nil, nil, err
-	}
-	if err := mw.Close(); err != nil {
 		return nil, nil, err
 	}
 	q := url.Values{}
 	q.Set("_sid", sid)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Endpoint+c.Path+"/"+apiName+"?"+q.Encode(), body)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ds2 direct torrent request: %w", err)
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.AddCookie(&http.Cookie{Name: "id", Value: sid})
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return nil, nil, fmt.Errorf("send ds2 direct torrent request: %w", err)
-	}
-	defer resp.Body.Close()
-	taskIDs, listIDs, err := decodeCreate(resp.Body)
+	resp, err := c.postTorrent(ctx, sid, c.Endpoint+c.Path+"/"+apiName+"?"+q.Encode(), body, contentType)
 	if err != nil {
 		return nil, nil, err
 	}
-	return taskIDs, listIDs, nil
-}
-
-func (c *Client) addTorrentDS2StyleVariant(ctx context.Context, sid, torrentPath, destination string, params, fields map[string]string) error {
-	f, err := os.Open(torrentPath)
-	if err != nil {
-		return fmt.Errorf("open torrent file: %w", err)
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return fmt.Errorf("stat torrent file: %w", err)
-	}
-	body := &bytes.Buffer{}
-	mw := multipart.NewWriter(body)
-	for k, val := range fields {
-		if val == "" {
-			continue
-		}
-		if err := mw.WriteField(k, val); err != nil {
-			return err
-		}
-	}
-	if destination != "" {
-		if err := mw.WriteField("destination", destination); err != nil {
-			return err
-		}
-	}
-	h := make(textproto.MIMEHeader)
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, "torrent", filepath.Base(torrentPath)))
-	h.Set("Content-Type", "application/x-bittorrent")
-	part, err := mw.CreatePart(h)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(part, f); err != nil {
-		return err
-	}
-	if err := mw.Close(); err != nil {
-		return err
-	}
-	vals := c.baseValues(sid)
-	vals.Set("method", "create")
-	for k, v := range params {
-		if v == "" && k == "size" {
-			v = strconv.FormatInt(st.Size(), 10)
-		}
-		if v != "" {
-			vals.Set(k, v)
-		}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Endpoint+c.Path+"?"+vals.Encode(), body)
-	if err != nil {
-		return fmt.Errorf("build ds2 torrent request: %w", err)
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.AddCookie(&http.Cookie{Name: "id", Value: sid})
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return fmt.Errorf("send ds2 torrent request: %w", err)
-	}
 	defer resp.Body.Close()
-	return decodeBase(resp.Body)
+	return decodeCreate(resp.Body)
 }
 
 func (c *Client) List(ctx context.Context, sid string) ([]Task, error) {
@@ -1044,19 +851,4 @@ func stringSliceFromAny(v any) []string {
 	default:
 		return nil
 	}
-}
-
-func errorsAs(err error, target **APIError) bool {
-	if err == nil {
-		return false
-	}
-	if e, ok := err.(*APIError); ok {
-		*target = e
-		return true
-	}
-	type unwrapper interface{ Unwrap() error }
-	if u, ok := err.(unwrapper); ok {
-		return errorsAs(u.Unwrap(), target)
-	}
-	return false
 }

@@ -45,9 +45,6 @@ func ValidateEndpoint(raw string) (*url.URL, error) {
 
 func (o *GlobalOptions) ResolvePassword(stdin io.Reader) error {
 	if o.CredentialsFile != "" {
-		if o.User != "" || o.Password != "" || o.PasswordStdin {
-			return errors.New("use --credentials-file without --user, --password, or --password-stdin")
-		}
 		if err := o.loadCredentialsFile(); err != nil {
 			return err
 		}
@@ -69,6 +66,13 @@ func (o *GlobalOptions) ResolvePassword(stdin io.Reader) error {
 }
 
 func (o *GlobalOptions) loadCredentialsFile() error {
+	info, err := os.Stat(o.CredentialsFile)
+	if err != nil {
+		return fmt.Errorf("read credentials file: %w", err)
+	}
+	if mode := info.Mode().Perm(); mode&0077 != 0 {
+		return fmt.Errorf("credentials file %s has too open permissions %04o; run: chmod 600 %s", o.CredentialsFile, mode, o.CredentialsFile)
+	}
 	b, err := os.ReadFile(o.CredentialsFile)
 	if err != nil {
 		return fmt.Errorf("read credentials file: %w", err)
