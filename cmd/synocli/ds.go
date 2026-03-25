@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -33,97 +34,64 @@ func newDSCmd(ac *appContext) *cobra.Command {
 }
 
 func newDSAddCmd(ac *appContext) *cobra.Command {
-	cmd := &cobra.Command{Use: "add", Short: "Add downloads"}
 	var destination string
-	urlCmd := &cobra.Command{
-		Use:   "url <endpoint> <url>",
-		Short: "Add HTTP/HTTPS URL download",
+	cmd := &cobra.Command{
+		Use:   "add <endpoint> <input>",
+		Short: "Add download from URL, magnet, or torrent file",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			endpoint := args[0]
-			uri := args[1]
-			return ac.withSession(cmd, endpoint, joinCommand("ds", "add", "url"), func(ctx context.Context, s *session) (any, error) {
-				taskIDs, err := s.dsClient.AddURI(ctx, uri, destination)
-				if err != nil {
-					return nil, err
-				}
-				data := map[string]any{"kind": "url", "uri": uri, "destination": destination, "task_ids": taskIDs}
-				if ac.opts.JSON {
-					return data, nil
-				}
-				if len(taskIDs) > 0 {
-					_, _ = fmt.Fprintf(ac.out, "added URL download: %s (task_ids=%s)\n", uri, strings.Join(taskIDs, ","))
-				} else {
-					_, _ = fmt.Fprintf(ac.out, "added URL download: %s\n", uri)
-				}
-				for _, tid := range taskIDs {
-					task, err := s.dsClient.Get(ctx, tid)
-					if err != nil {
-						continue
-					}
-					_, _ = fmt.Fprintln(ac.out)
-					printTaskDetail(ac.out, *task)
-				}
-				return nil, nil
-			})
-		},
-	}
-	magnetCmd := &cobra.Command{
-		Use:   "magnet <endpoint> <magnet>",
-		Short: "Add magnet download",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := args[0]
-			magnet := args[1]
-			return ac.withSession(cmd, endpoint, joinCommand("ds", "add", "magnet"), func(ctx context.Context, s *session) (any, error) {
-				taskIDs, err := s.dsClient.AddURI(ctx, magnet, destination)
-				if err != nil {
-					return nil, err
-				}
-				data := map[string]any{"kind": "magnet", "uri": magnet, "destination": destination, "task_ids": taskIDs}
-				if ac.opts.JSON {
-					return data, nil
-				}
-				if len(taskIDs) > 0 {
-					_, _ = fmt.Fprintf(ac.out, "added magnet download (task_ids=%s)\n", strings.Join(taskIDs, ","))
-				} else {
-					_, _ = fmt.Fprintln(ac.out, "added magnet download")
-				}
-				for _, tid := range taskIDs {
-					task, err := s.dsClient.Get(ctx, tid)
-					if err != nil {
-						continue
-					}
-					_, _ = fmt.Fprintln(ac.out)
-					printTaskDetail(ac.out, *task)
-				}
-				return nil, nil
-			})
-		},
-	}
-	torrentCmd := &cobra.Command{
-		Use:   "torrent <endpoint> <file.torrent>",
-		Short: "Add torrent file",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := args[0]
-			torrentPath := args[1]
-			if _, err := os.Stat(torrentPath); err != nil {
-				return apperr.Wrap("validation_error", "invalid torrent file", 1, err)
+			input := strings.TrimSpace(args[1])
+			kind, err := detectAddInputKind(input)
+			if err != nil {
+				return apperr.Wrap("validation_error", "invalid add input", 1, err)
 			}
-			return ac.withSession(cmd, endpoint, joinCommand("ds", "add", "torrent"), func(ctx context.Context, s *session) (any, error) {
-				taskIDs, err := s.dsClient.AddTorrent(ctx, torrentPath, destination)
+			if kind == addInputTorrent {
+				if err := downloadstation.ValidateTorrentFile(input); err != nil {
+					return apperr.Wrap("validation_error", "invalid torrent file", 1, err)
+				}
+			}
+			return ac.withSession(cmd, endpoint, joinCommand("ds", "add"), func(ctx context.Context, s *session) (any, error) {
+				var taskIDs []string
+				switch kind {
+				case addInputTorrent:
+					taskIDs, err = s.dsClient.AddTorrent(ctx, input, destination)
+				case addInputMagnet, addInputURL:
+					taskIDs, err = s.dsClient.AddURI(ctx, input, destination)
+				default:
+					return nil, apperr.New("validation_error", "unsupported input type", 1)
+				}
 				if err != nil {
 					return nil, err
 				}
-				data := map[string]any{"kind": "torrent", "file": torrentPath, "destination": destination, "task_ids": taskIDs}
+				data := map[string]any{"kind": string(kind), "destination": destination, "task_ids": taskIDs}
+				if kind == addInputTorrent {
+					data["file"] = input
+				} else {
+					data["uri"] = input
+				}
 				if ac.opts.JSON {
 					return data, nil
 				}
-				if len(taskIDs) > 0 {
-					_, _ = fmt.Fprintf(ac.out, "added torrent: %s (task_ids=%s)\n", torrentPath, strings.Join(taskIDs, ","))
-				} else {
-					_, _ = fmt.Fprintf(ac.out, "added torrent: %s\n", torrentPath)
+				switch kind {
+				case addInputURL:
+					if len(taskIDs) > 0 {
+						_, _ = fmt.Fprintf(ac.out, "added URL download: %s (task_ids=%s)\n", input, strings.Join(taskIDs, ","))
+					} else {
+						_, _ = fmt.Fprintf(ac.out, "added URL download: %s\n", input)
+					}
+				case addInputMagnet:
+					if len(taskIDs) > 0 {
+						_, _ = fmt.Fprintf(ac.out, "added magnet download (task_ids=%s)\n", strings.Join(taskIDs, ","))
+					} else {
+						_, _ = fmt.Fprintln(ac.out, "added magnet download")
+					}
+				case addInputTorrent:
+					if len(taskIDs) > 0 {
+						_, _ = fmt.Fprintf(ac.out, "added torrent: %s (task_ids=%s)\n", input, strings.Join(taskIDs, ","))
+					} else {
+						_, _ = fmt.Fprintf(ac.out, "added torrent: %s\n", input)
+					}
 				}
 				for _, tid := range taskIDs {
 					task, err := s.dsClient.Get(ctx, tid)
@@ -137,11 +105,38 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 			})
 		},
 	}
-	urlCmd.Flags().StringVar(&destination, "destination", "", "Destination folder")
-	magnetCmd.Flags().StringVar(&destination, "destination", "", "Destination folder")
-	torrentCmd.Flags().StringVar(&destination, "destination", "", "Destination folder")
-	cmd.AddCommand(urlCmd, magnetCmd, torrentCmd)
+	cmd.Flags().StringVar(&destination, "destination", "", "Destination folder")
 	return cmd
+}
+
+type addInputType string
+
+const (
+	addInputURL     addInputType = "url"
+	addInputMagnet  addInputType = "magnet"
+	addInputTorrent addInputType = "torrent"
+)
+
+func detectAddInputKind(input string) (addInputType, error) {
+	lower := strings.ToLower(input)
+	if strings.HasPrefix(lower, "magnet:") {
+		return addInputMagnet, nil
+	}
+	st, err := os.Stat(input)
+	if err == nil {
+		if st.IsDir() {
+			return "", fmt.Errorf("input %q is a directory, expected a torrent file", input)
+		}
+		return addInputTorrent, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", fmt.Errorf("stat input: %w", err)
+	}
+	u, err := url.Parse(input)
+	if err == nil && u.Scheme != "" && !strings.EqualFold(u.Scheme, "magnet") {
+		return addInputURL, nil
+	}
+	return "", fmt.Errorf("cannot detect input type; expected magnet URI, existing torrent file path, or URL with scheme")
 }
 
 func newDSListCmd(ac *appContext) *cobra.Command {

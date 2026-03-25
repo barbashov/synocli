@@ -70,9 +70,7 @@ Keys are case-insensitive.
 
 - `synocli ds list <endpoint>`
 - `synocli ds get <endpoint> <task-id>`
-- `synocli ds add url <endpoint> <url> [--destination <folder>]`
-- `synocli ds add magnet <endpoint> <magnet> [--destination <folder>]`
-- `synocli ds add torrent <endpoint> <file.torrent> [--destination <folder>]`
+- `synocli ds add <endpoint> <input> [--destination <folder>]`
 - `synocli ds pause <endpoint> <task-id> [<task-id>...]`
 - `synocli ds resume <endpoint> <task-id> [<task-id>...]`
 - `synocli ds delete <endpoint> <task-id> [<task-id>...] [--with-data]`
@@ -88,7 +86,9 @@ synocli auth whoami https://192.168.0.1:5001 --user admin --password-stdin
 synocli auth api-info https://192.168.0.1:5001 --credentials-file ./creds.env --prefix SYNO.DownloadStation
 
 # add/list/get
-synocli ds add torrent https://192.168.0.1:5001 ./ubuntu.torrent --credentials-file ./creds.env --insecure-tls
+synocli ds add https://192.168.0.1:5001 ./ubuntu.torrent --credentials-file ./creds.env --insecure-tls
+synocli ds add https://192.168.0.1:5001 magnet:?xt=urn:btih:... --credentials-file ./creds.env --insecure-tls
+synocli ds add https://192.168.0.1:5001 https://example.com/file.iso --credentials-file ./creds.env --insecure-tls
 synocli ds list https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
 synocli ds get https://192.168.0.1:5001 dbid_123 --credentials-file ./creds.env --insecure-tls
 
@@ -108,6 +108,7 @@ synocli ds watch https://192.168.0.1:5001 --interval 2s --status downloading --c
 
 - `ds list` shows table columns including normalized status and raw status.
 - `ds get` prints detailed fields line-by-line.
+- `ds add` auto-detects input type in this order: magnet URI, existing local file (torrent), URL with scheme.
 - For DS2 numeric statuses, raw status is rendered as enum with code, e.g. `paused (3)`.
 
 ### JSON envelope (`--json`)
