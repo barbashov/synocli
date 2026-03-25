@@ -116,9 +116,9 @@ func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName stri
 			dsListVersion = clampVersion(dsListVersion, 3)
 		}
 		if a.opts.Debug {
-			fmt.Fprintf(a.err, "[debug] selected task api=%s path=%s version=%d\n", dsAPIName, dsPath, dsVersion)
+			_, _ = fmt.Fprintf(a.err, "[debug] selected task api=%s path=%s version=%d\n", dsAPIName, dsPath, dsVersion)
 			if dsListAPIName != "" {
-				fmt.Fprintf(a.err, "[debug] selected task-list api=%s path=%s version=%d\n", dsListAPIName, dsListPath, dsListVersion)
+				_, _ = fmt.Fprintf(a.err, "[debug] selected task-list api=%s path=%s version=%d\n", dsListAPIName, dsListPath, dsListVersion)
 			}
 		}
 		dsClient = &downloadstation.Client{
@@ -250,7 +250,7 @@ func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, task
 		if m := taskAPIRe.FindStringSubmatch(name); m != nil {
 			suffix := 0
 			if m[1] != "" {
-				fmt.Sscanf(m[1], "%d", &suffix)
+				_, _ = fmt.Sscanf(m[1], "%d", &suffix)
 			}
 			taskCandidates = append(taskCandidates, candidate{name: name, path: "/webapi/" + entry.Path, min: entry.MinVersion, max: entry.MaxVersion, suffix: suffix})
 			continue
@@ -258,7 +258,7 @@ func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, task
 		if m := taskListAPIRe.FindStringSubmatch(name); m != nil {
 			suffix := 0
 			if m[1] != "" {
-				fmt.Sscanf(m[1], "%d", &suffix)
+				_, _ = fmt.Sscanf(m[1], "%d", &suffix)
 			}
 			listCandidates = append(listCandidates, candidate{name: name, path: "/webapi/" + entry.Path, min: entry.MinVersion, max: entry.MaxVersion, suffix: suffix})
 		}
@@ -287,8 +287,8 @@ func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, task
 }
 
 func printTable(w io.Writer, headers []string, rows [][]string) {
-	fmt.Fprintln(w, strings.Join(headers, "\t"))
+	_, _ = fmt.Fprintln(w, strings.Join(headers, "\t"))
 	for _, row := range rows {
-		fmt.Fprintln(w, strings.Join(row, "\t"))
+		_, _ = fmt.Fprintln(w, strings.Join(row, "\t"))
 	}
 }

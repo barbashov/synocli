@@ -45,8 +45,7 @@ func TestAddTorrentMultipart(t *testing.T) {
 			if err != nil {
 				break
 			}
-			switch part.FormName() {
-			case "file":
+			if part.FormName() == "file" {
 				filename = part.FileName()
 			}
 		}

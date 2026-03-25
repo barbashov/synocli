@@ -49,9 +49,9 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					return data, nil
 				}
 				if len(taskIDs) > 0 {
-					fmt.Fprintf(ac.out, "added URL download: %s (task_ids=%s)\n", uri, strings.Join(taskIDs, ","))
+					_, _ = fmt.Fprintf(ac.out, "added URL download: %s (task_ids=%s)\n", uri, strings.Join(taskIDs, ","))
 				} else {
-					fmt.Fprintf(ac.out, "added URL download: %s\n", uri)
+					_, _ = fmt.Fprintf(ac.out, "added URL download: %s\n", uri)
 				}
 				return nil, nil
 			})
@@ -74,9 +74,9 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					return data, nil
 				}
 				if len(taskIDs) > 0 {
-					fmt.Fprintf(ac.out, "added magnet download (task_ids=%s)\n", strings.Join(taskIDs, ","))
+					_, _ = fmt.Fprintf(ac.out, "added magnet download (task_ids=%s)\n", strings.Join(taskIDs, ","))
 				} else {
-					fmt.Fprintln(ac.out, "added magnet download")
+					_, _ = fmt.Fprintln(ac.out, "added magnet download")
 				}
 				return nil, nil
 			})
@@ -102,9 +102,9 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					return data, nil
 				}
 				if len(taskIDs) > 0 {
-					fmt.Fprintf(ac.out, "added torrent: %s (task_ids=%s)\n", torrentPath, strings.Join(taskIDs, ","))
+					_, _ = fmt.Fprintf(ac.out, "added torrent: %s (task_ids=%s)\n", torrentPath, strings.Join(taskIDs, ","))
 				} else {
-					fmt.Fprintf(ac.out, "added torrent: %s\n", torrentPath)
+					_, _ = fmt.Fprintf(ac.out, "added torrent: %s\n", torrentPath)
 				}
 				return nil, nil
 			})
@@ -189,7 +189,7 @@ func newDSGetCmd(ac *appContext) *cobra.Command {
 					fmt.Sprintf("uri: %s", valueOrDash(uriOf(*t))),
 					fmt.Sprintf("status_extra: %s", valueOrDash(t.StatusExtra)),
 				} {
-					fmt.Fprintln(ac.out, line)
+					_, _ = fmt.Fprintln(ac.out, line)
 				}
 				return nil, nil
 			})
@@ -226,7 +226,7 @@ func newDSDeleteCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return data, nil
 				}
-				fmt.Fprintf(ac.out, "delete: %s\n", strings.Join(ids, ", "))
+				_, _ = fmt.Fprintf(ac.out, "delete: %s\n", strings.Join(ids, ", "))
 				return nil, nil
 			})
 		},
@@ -251,7 +251,7 @@ func actionWithIDs(ac *appContext, action string, run func(context.Context, *ses
 				if ac.opts.JSON {
 					return data, nil
 				}
-				fmt.Fprintf(ac.out, "%s: %s\n", action, strings.Join(ids, ", "))
+				_, _ = fmt.Fprintf(ac.out, "%s: %s\n", action, strings.Join(ids, ", "))
 				return nil, nil
 			})
 		},
@@ -283,7 +283,7 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 						if ac.opts.JSON {
 							return data, nil
 						}
-						fmt.Fprintf(ac.out, "task %s completed with status %s\n", id, n)
+						_, _ = fmt.Fprintf(ac.out, "task %s completed with status %s\n", id, n)
 						return nil, nil
 					}
 					if downloadstation.IsTerminalFailure(n) {
@@ -339,7 +339,7 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 							return err
 						}
 					} else {
-						fmt.Fprintf(ac.out, "[%s] tasks=%d\n", time.Now().Format(time.RFC3339), len(filtered))
+						_, _ = fmt.Fprintf(ac.out, "[%s] tasks=%d\n", time.Now().Format(time.RFC3339), len(filtered))
 						rows := make([][]string, 0, len(filtered))
 						for _, t := range filtered {
 							rows = append(rows, []string{t.ID, t.Title, downloadstation.NormalizeStatus(t.Status), downloadstation.StatusDisplay(t.Status), fmt.Sprintf("%d", downSpeedOf(t))})

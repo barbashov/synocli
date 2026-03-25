@@ -37,7 +37,7 @@ func Discover(ctx context.Context, endpoint string, client *http.Client) (map[st
 	if err != nil {
 		return nil, fmt.Errorf("request api info: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out Response
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("decode api info: %w", err)

@@ -27,7 +27,7 @@ func newAuthPingCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return map[string]any{"status": "ok", "user": ac.opts.User}, nil
 				}
-				fmt.Fprintf(ac.out, "ok: authenticated as %s\n", ac.opts.User)
+				_, _ = fmt.Fprintf(ac.out, "ok: authenticated as %s\n", ac.opts.User)
 				return nil, nil
 			})
 		},
@@ -45,7 +45,7 @@ func newAuthWhoamiCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return data, nil
 				}
-				fmt.Fprintf(ac.out, "user: %s\nauthenticated: true\n", ac.opts.User)
+				_, _ = fmt.Fprintf(ac.out, "user: %s\nauthenticated: true\n", ac.opts.User)
 				return nil, nil
 			})
 		},
@@ -78,10 +78,10 @@ func newAuthAPIInfoCmd(ac *appContext) *cobra.Command {
 					keys = append(keys, k)
 				}
 				sort.Strings(keys)
-				fmt.Fprintln(ac.out, "api\tpath\tmin\tmax")
+				_, _ = fmt.Fprintln(ac.out, "api\tpath\tmin\tmax")
 				for _, k := range keys {
 					e := filtered[k]
-					fmt.Fprintf(ac.out, "%s\t%s\t%d\t%d\n", k, e.Path, e.MinVersion, e.MaxVersion)
+					_, _ = fmt.Fprintf(ac.out, "%s\t%s\t%d\t%d\n", k, e.Path, e.MinVersion, e.MaxVersion)
 				}
 				return nil, nil
 			})

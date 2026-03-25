@@ -53,7 +53,7 @@ type debugRoundTripper struct {
 func (d *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
 	baseURL := req.URL.Scheme + "://" + req.URL.Host + req.URL.Path
-	fmt.Fprintf(d.out, "[debug] -> %s %s", req.Method, baseURL)
+	_, _ = fmt.Fprintf(d.out, "[debug] -> %s %s", req.Method, baseURL)
 	if len(req.URL.Query()) > 0 {
 		keys := make([]string, 0, len(req.URL.Query()))
 		for k := range req.URL.Query() {
@@ -64,31 +64,31 @@ func (d *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		for _, k := range keys {
 			pairs = append(pairs, fmt.Sprintf("%s=%s", k, redact.Value(k, req.URL.Query().Get(k))))
 		}
-		fmt.Fprintf(d.out, "?%s", strings.Join(pairs, "&"))
+		_, _ = fmt.Fprintf(d.out, "?%s", strings.Join(pairs, "&"))
 	}
-	fmt.Fprintln(d.out)
+	_, _ = fmt.Fprintln(d.out)
 	for k, vals := range req.Header {
 		for _, v := range vals {
-			fmt.Fprintf(d.out, "[debug]   header %s=%s\n", k, redact.HeaderValue(k, v))
+			_, _ = fmt.Fprintf(d.out, "[debug]   header %s=%s\n", k, redact.HeaderValue(k, v))
 		}
 	}
 	d.logRequestBody(req)
 	resp, err := d.next.RoundTrip(req)
 	dur := time.Since(start)
 	if err != nil {
-		fmt.Fprintf(d.out, "[debug] <- error after %s: %v\n", dur, err)
+		_, _ = fmt.Fprintf(d.out, "[debug] <- error after %s: %v\n", dur, err)
 		return nil, err
 	}
-	fmt.Fprintf(d.out, "[debug] <- status=%s after %s\n", resp.Status, dur)
+	_, _ = fmt.Fprintf(d.out, "[debug] <- status=%s after %s\n", resp.Status, dur)
 	d.logResponseBody(resp)
 	if req.URL != nil {
 		hostURL := &url.URL{Scheme: req.URL.Scheme, Host: req.URL.Host}
 		for _, c := range resp.Cookies() {
-			fmt.Fprintf(d.out, "[debug]   set-cookie %s=%s\n", c.Name, redact.HeaderValue("Set-Cookie", c.Value))
+			_, _ = fmt.Fprintf(d.out, "[debug]   set-cookie %s=%s\n", c.Name, redact.HeaderValue("Set-Cookie", c.Value))
 		}
 		for _, c := range req.Cookies() {
 			_ = hostURL
-			fmt.Fprintf(d.out, "[debug]   sent-cookie %s=%s\n", c.Name, redact.HeaderValue("Cookie", c.Value))
+			_, _ = fmt.Fprintf(d.out, "[debug]   sent-cookie %s=%s\n", c.Name, redact.HeaderValue("Cookie", c.Value))
 		}
 	}
 	return resp, nil
@@ -99,12 +99,12 @@ func (d *debugRoundTripper) logRequestBody(req *http.Request) {
 		return
 	}
 	if req.GetBody == nil {
-		fmt.Fprintln(d.out, "[debug]   body=<stream unavailable>")
+		_, _ = fmt.Fprintln(d.out, "[debug]   body=<stream unavailable>")
 		return
 	}
 	body, err := cloneBody(req.GetBody)
 	if err != nil {
-		fmt.Fprintf(d.out, "[debug]   body=<read error: %v>\n", err)
+		_, _ = fmt.Fprintf(d.out, "[debug]   body=<read error: %v>\n", err)
 		return
 	}
 	d.logBody("request", req.Header.Get("Content-Type"), body)
@@ -116,7 +116,7 @@ func (d *debugRoundTripper) logResponseBody(resp *http.Response) {
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Fprintf(d.out, "[debug]   response_body=<read error: %v>\n", err)
+		_, _ = fmt.Fprintf(d.out, "[debug]   response_body=<read error: %v>\n", err)
 		return
 	}
 	_ = resp.Body.Close()
@@ -125,7 +125,7 @@ func (d *debugRoundTripper) logResponseBody(resp *http.Response) {
 }
 
 func (d *debugRoundTripper) logBody(kind, contentType string, body []byte) {
-	fmt.Fprintf(d.out, "[debug]   %s_body_bytes=%d\n", kind, len(body))
+	_, _ = fmt.Fprintf(d.out, "[debug]   %s_body_bytes=%d\n", kind, len(body))
 	if len(body) == 0 {
 		return
 	}
@@ -134,7 +134,7 @@ func (d *debugRoundTripper) logBody(kind, contentType string, body []byte) {
 		if line == "" {
 			continue
 		}
-		fmt.Fprintf(d.out, "[debug]   %s_body %s\n", kind, line)
+		_, _ = fmt.Fprintf(d.out, "[debug]   %s_body %s\n", kind, line)
 	}
 }
 
@@ -143,7 +143,7 @@ func cloneBody(getBody func() (io.ReadCloser, error)) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	return io.ReadAll(rc)
 }
 

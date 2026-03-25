@@ -300,7 +300,7 @@ func openAndStatTorrent(path string) (*os.File, int64, error) {
 	}
 	st, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, 0, fmt.Errorf("stat torrent file: %w", err)
 	}
 	return f, st.Size(), nil
@@ -444,7 +444,7 @@ func (c *Client) getDefaultDestination(ctx context.Context, sid string) (string,
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out infoResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return "", err
@@ -464,7 +464,7 @@ func (c *Client) addTorrentWithField(ctx context.Context, sid, torrentPath, dest
 	if err != nil {
 		return fmt.Errorf("open torrent file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	vals := c.baseValues(sid)
 	vals.Set("method", "create")
@@ -494,7 +494,7 @@ func (c *Client) addTorrentWithField(ctx context.Context, sid, torrentPath, dest
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return decodeBase(resp.Body)
 }
 
@@ -503,7 +503,7 @@ func (c *Client) addTorrentCreateListStyle(ctx context.Context, sid, torrentPath
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	apiName := c.apiName()
 	// Keep this field set matching the proven reference implementation shape.
@@ -534,7 +534,7 @@ func (c *Client) addTorrentCreateListStyle(ctx context.Context, sid, torrentPath
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return decodeBase(resp.Body)
 }
 
@@ -543,7 +543,7 @@ func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, dest
 	if err != nil {
 		return nil, nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	apiName := c.apiName()
 	fields := [][2]string{
@@ -568,7 +568,7 @@ func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, dest
 	if err != nil {
 		return nil, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return decodeCreate(resp.Body)
 }
 
@@ -710,7 +710,7 @@ func (c *Client) doGETCreateToPath(ctx context.Context, path string, vals url.Va
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return decodeCreate(resp.Body)
 }
 
@@ -727,15 +727,14 @@ func (c *Client) doGETToPath(ctx context.Context, path string, vals url.Values, 
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if out == nil {
 		return decodeBase(resp.Body)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
-	switch v := out.(type) {
-	case *listResponse:
+	if v, ok := out.(*listResponse); ok {
 		if !v.Success {
 			code := 0
 			if v.Error != nil {

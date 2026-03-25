@@ -49,7 +49,7 @@ func (c *Client) Login(ctx context.Context, user, password string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("login request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out loginResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return "", fmt.Errorf("decode login response: %w", err)
@@ -82,6 +82,6 @@ func (c *Client) Logout(ctx context.Context, sid string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
