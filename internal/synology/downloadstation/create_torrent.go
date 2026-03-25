@@ -64,16 +64,9 @@ func (c *Client) postTorrent(ctx context.Context, reqURL string, body *bytes.Buf
 }
 
 func (c *Client) AddTorrent(ctx context.Context, torrentPath, destination string) ([]string, error) {
-	dest := destination
-	if strings.TrimSpace(dest) == "" {
-		defDest, err := c.getDefaultDestination(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("destination is required and default_destination could not be fetched: %w", err)
-		}
-		if strings.TrimSpace(defDest) == "" {
-			return nil, fmt.Errorf("destination is required and default_destination is empty; pass --destination")
-		}
-		dest = defDest
+	dest, err := c.resolveDestination(ctx, destination)
+	if err != nil {
+		return nil, err
 	}
 	taskIDs, listIDs, err := c.addTorrentDS2Direct(ctx, torrentPath, dest)
 	if err != nil {
@@ -83,6 +76,21 @@ func (c *Client) AddTorrent(ctx context.Context, torrentPath, destination string
 		return nil, err
 	}
 	return taskIDs, nil
+}
+
+func (c *Client) resolveDestination(ctx context.Context, destination string) (string, error) {
+	dest := destination
+	if strings.TrimSpace(dest) == "" {
+		defDest, err := c.getDefaultDestination(ctx)
+		if err != nil {
+			return "", fmt.Errorf("destination is required and default_destination could not be fetched: %w", err)
+		}
+		if strings.TrimSpace(defDest) == "" {
+			return "", fmt.Errorf("destination is required and default_destination is empty; pass --destination")
+		}
+		dest = defDest
+	}
+	return dest, nil
 }
 
 func (c *Client) getDefaultDestination(ctx context.Context) (string, error) {

@@ -110,10 +110,12 @@ func TestDS2AddTorrentRequiresTaskID(t *testing.T) {
 }
 
 func TestDS2AddURIReturnsTaskIDs(t *testing.T) {
+	var destination string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("create_list") != "false" {
 			t.Fatalf("expected create_list=false, got %q", r.URL.Query().Get("create_list"))
 		}
+		destination = r.URL.Query().Get("destination")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"task_id":["dbid_1"]}}`))
 	}))
 	defer ts.Close()
@@ -124,6 +126,9 @@ func TestDS2AddURIReturnsTaskIDs(t *testing.T) {
 	}
 	if len(taskIDs) != 1 || taskIDs[0] != "dbid_1" {
 		t.Fatalf("unexpected task ids: %#v", taskIDs)
+	}
+	if destination != "downloads" {
+		t.Fatalf("unexpected destination: %q", destination)
 	}
 }
 
@@ -143,6 +148,58 @@ func TestDS2AddURIEscapesJSONInput(t *testing.T) {
 	}
 	if len(decoded) != 1 || decoded[0] != uri {
 		t.Fatalf("unexpected decoded url payload: %#v", decoded)
+	}
+}
+
+func TestDS2AddURIUsesDefaultDestinationWhenMissing(t *testing.T) {
+	var destination string
+	var decoded []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/webapi/DownloadStation/info.cgi":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"default_destination":"from_config"}}`))
+		case "/webapi/entry.cgi":
+			destination = r.URL.Query().Get("destination")
+			if err := json.Unmarshal([]byte(r.URL.Query().Get("url")), &decoded); err != nil {
+				t.Fatalf("url parameter is not valid JSON array: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"success":true,"data":{"task_id":["dbid_1"]}}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	taskIDs, err := c.AddURI(context.Background(), "magnet:?xt=urn:btih:abc", "")
+	if err != nil {
+		t.Fatalf("AddURI error: %v", err)
+	}
+	if len(taskIDs) != 1 || taskIDs[0] != "dbid_1" {
+		t.Fatalf("unexpected task ids: %#v", taskIDs)
+	}
+	if destination != "from_config" {
+		t.Fatalf("unexpected destination: %q", destination)
+	}
+	if len(decoded) != 1 || decoded[0] != "magnet:?xt=urn:btih:abc" {
+		t.Fatalf("unexpected decoded url payload: %#v", decoded)
+	}
+}
+
+func TestDS2AddURIFailsWhenDefaultDestinationEmpty(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/webapi/DownloadStation/info.cgi" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"default_destination":""}}`))
+	}))
+	defer ts.Close()
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	_, err := c.AddURI(context.Background(), "https://example.com/file.iso", "")
+	if err == nil {
+		t.Fatalf("expected error for empty default destination")
+	}
+	if !strings.Contains(err.Error(), "default_destination is empty") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

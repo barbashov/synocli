@@ -7,6 +7,10 @@ import (
 )
 
 func (c *Client) AddURI(ctx context.Context, uri, destination string) ([]string, error) {
+	dest, err := c.resolveDestination(ctx, destination)
+	if err != nil {
+		return nil, err
+	}
 	vals := c.baseValues()
 	vals.Set("method", "create")
 	vals.Set("type", "url")
@@ -16,9 +20,7 @@ func (c *Client) AddURI(ctx context.Context, uri, destination string) ([]string,
 	}
 	vals.Set("url", string(urlJSON))
 	vals.Set("create_list", "false")
-	if destination != "" {
-		vals.Set("destination", destination)
-	}
+	vals.Set("destination", dest)
 	taskIDs, listIDs, err := c.doGETCreateToPath(ctx, c.path, vals)
 	if err != nil {
 		return nil, err
