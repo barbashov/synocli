@@ -39,10 +39,7 @@ type session struct {
 	apiVersions map[string]int
 }
 
-var (
-	taskAPIRe     = regexp.MustCompile(`^SYNO\.DownloadStation(\d*)\.Task$`)
-	taskListAPIRe = regexp.MustCompile(`^SYNO\.DownloadStation(\d*)\.Task\.List$`)
-)
+var taskAPIRe = regexp.MustCompile(`^SYNO\.DownloadStation(\d*)\.Task$`)
 
 func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	ac := &appContext{stdin: stdin, out: stdout, err: stderr}
@@ -112,26 +109,17 @@ func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName stri
 	apiVersions := map[string]int{"auth": authVersion}
 	var dsClient *downloadstation.Client
 	if needsDS {
-		dsAPIName, dsPath, dsVersion, dsListAPIName, dsListPath, dsListVersion := selectDownloadStationAPIs(entries)
+		dsAPIName, dsPath, dsVersion := selectDownloadStationAPIs(entries)
 		dsVersion = clampVersion(dsVersion, 3)
-		if dsListVersion > 0 {
-			dsListVersion = clampVersion(dsListVersion, 3)
-		}
 		if a.opts.Debug {
 			_, _ = fmt.Fprintf(a.err, "[debug] selected task api=%s path=%s version=%d\n", dsAPIName, dsPath, dsVersion)
-			if dsListAPIName != "" {
-				_, _ = fmt.Fprintf(a.err, "[debug] selected task-list api=%s path=%s version=%d\n", dsListAPIName, dsListPath, dsListVersion)
-			}
 		}
 		dsClient = &downloadstation.Client{
-			Endpoint:    u.String(),
-			Path:        dsPath,
-			Version:     dsVersion,
-			APIName:     dsAPIName,
-			ListPath:    dsListPath,
-			ListVersion: dsListVersion,
-			ListAPIName: dsListAPIName,
-			HTTP:        hc,
+			Endpoint: u.String(),
+			Path:     dsPath,
+			Version:  dsVersion,
+			APIName:  dsAPIName,
+			HTTP:     hc,
 		}
 		apiVersions["task"] = dsVersion
 	}
@@ -237,7 +225,7 @@ func clampVersion(version, maxSupported int) int {
 	return version
 }
 
-func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, taskPath string, taskVersion int, listName, listPath string, listVersion int) {
+func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, taskPath string, taskVersion int) {
 	taskName, taskPath, taskVersion = "SYNO.DownloadStation.Task", "/webapi/DownloadStation/task.cgi", 1
 	type candidate struct {
 		name   string
@@ -247,7 +235,6 @@ func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, task
 		suffix int
 	}
 	var taskCandidates []candidate
-	var listCandidates []candidate
 	for name, entry := range entries {
 		if m := taskAPIRe.FindStringSubmatch(name); m != nil {
 			suffix := 0
@@ -255,14 +242,6 @@ func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, task
 				_, _ = fmt.Sscanf(m[1], "%d", &suffix)
 			}
 			taskCandidates = append(taskCandidates, candidate{name: name, path: "/webapi/" + entry.Path, min: entry.MinVersion, max: entry.MaxVersion, suffix: suffix})
-			continue
-		}
-		if m := taskListAPIRe.FindStringSubmatch(name); m != nil {
-			suffix := 0
-			if m[1] != "" {
-				_, _ = fmt.Sscanf(m[1], "%d", &suffix)
-			}
-			listCandidates = append(listCandidates, candidate{name: name, path: "/webapi/" + entry.Path, min: entry.MinVersion, max: entry.MaxVersion, suffix: suffix})
 		}
 	}
 	sort.Slice(taskCandidates, func(i, j int) bool {
@@ -275,17 +254,7 @@ func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, task
 		best := taskCandidates[0]
 		taskName, taskPath, taskVersion = best.name, best.path, best.max
 	}
-	sort.Slice(listCandidates, func(i, j int) bool {
-		if listCandidates[i].suffix != listCandidates[j].suffix {
-			return listCandidates[i].suffix > listCandidates[j].suffix
-		}
-		return listCandidates[i].max > listCandidates[j].max
-	})
-	if len(listCandidates) > 0 {
-		best := listCandidates[0]
-		listName, listPath, listVersion = best.name, best.path, best.max
-	}
-	return taskName, taskPath, taskVersion, listName, listPath, listVersion
+	return taskName, taskPath, taskVersion
 }
 
 func printTable(w io.Writer, headers []string, rows [][]string) {

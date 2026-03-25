@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -18,14 +17,11 @@ import (
 )
 
 type Client struct {
-	Endpoint    string
-	Path        string
-	Version     int
-	APIName     string
-	ListPath    string
-	ListVersion int
-	ListAPIName string
-	HTTP        *http.Client
+	Endpoint string
+	Path     string
+	Version  int
+	APIName  string
+	HTTP     *http.Client
 }
 
 type APIError struct {
@@ -128,7 +124,6 @@ type listResponse struct {
 		Total  int    `json:"total"`
 		Tasks  []Task `json:"tasks"`
 		Task   []Task `json:"task"`
-		List   []Task `json:"list"`
 	} `json:"data"`
 }
 
@@ -345,79 +340,42 @@ func (c *Client) postTorrent(ctx context.Context, sid, reqURL string, body *byte
 func (c *Client) AddURI(ctx context.Context, sid, uri, destination string) ([]string, error) {
 	vals := c.baseValues(sid)
 	vals.Set("method", "create")
-	if strings.Contains(c.apiName(), "DownloadStation2.") {
-		vals.Set("type", "url")
-		vals.Set("url", fmt.Sprintf("[\"%s\"]", uri))
-		vals.Set("create_list", "false")
-	} else {
-		vals.Set("uri", uri)
-	}
+	vals.Set("type", "url")
+	vals.Set("url", fmt.Sprintf("[\"%s\"]", uri))
+	vals.Set("create_list", "false")
 	if destination != "" {
 		vals.Set("destination", destination)
 	}
-	if strings.Contains(c.apiName(), "DownloadStation2.") {
-		taskIDs, listIDs, err := c.doGETCreateToPath(ctx, c.Path, vals)
-		if err != nil {
-			return nil, err
-		}
-		if err := validateDirectTaskCreated(taskIDs, listIDs); err != nil {
-			return nil, err
-		}
-		return taskIDs, nil
+	taskIDs, listIDs, err := c.doGETCreateToPath(ctx, c.Path, vals)
+	if err != nil {
+		return nil, err
 	}
-	return nil, c.doGET(ctx, vals, nil)
+	if err := validateDirectTaskCreated(taskIDs, listIDs); err != nil {
+		return nil, err
+	}
+	return taskIDs, nil
 }
 
 func (c *Client) AddTorrent(ctx context.Context, sid, torrentPath, destination string) ([]string, error) {
-	if strings.Contains(c.apiName(), "DownloadStation2.") {
-		dest := destination
-		if strings.TrimSpace(dest) == "" {
-			defDest, err := c.getDefaultDestination(ctx, sid)
-			if err != nil {
-				return nil, fmt.Errorf("destination is required and default_destination could not be fetched: %w", err)
-			}
-			if strings.TrimSpace(defDest) == "" {
-				return nil, fmt.Errorf("destination is required and default_destination is empty; pass --destination")
-			}
-			dest = defDest
-		}
-		taskIDs, listIDs, err := c.addTorrentDS2Direct(ctx, sid, torrentPath, dest)
+	dest := destination
+	if strings.TrimSpace(dest) == "" {
+		defDest, err := c.getDefaultDestination(ctx, sid)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("destination is required and default_destination could not be fetched: %w", err)
 		}
-		if err := validateDirectTaskCreated(taskIDs, listIDs); err != nil {
-			return nil, err
+		if strings.TrimSpace(defDest) == "" {
+			return nil, fmt.Errorf("destination is required and default_destination is empty; pass --destination")
 		}
-		return taskIDs, nil
+		dest = defDest
 	}
-	return nil, c.addTorrentWithFallback(ctx, sid, torrentPath, destination)
-}
-
-func (c *Client) addTorrentWithFallback(ctx context.Context, sid, torrentPath, destination string) error {
-	fields := []string{"file", "torrent", "upload"}
-	modes := []string{"query_only", "post_only"}
-	filenames := []string{filepath.Base(torrentPath), "upload.torrent"}
-	var lastErr error
-	for _, mode := range modes {
-		for _, field := range fields {
-			for _, filename := range filenames {
-				if err := c.addTorrentWithField(ctx, sid, torrentPath, destination, field, mode, filename); err != nil {
-					lastErr = err
-					var apiErr *APIError
-					if errors.As(err, &apiErr) && (apiErr.Code == 101 || apiErr.Code == 400 || apiErr.Code == 403) {
-						continue
-					}
-					return err
-				}
-				return nil
-			}
-		}
+	taskIDs, listIDs, err := c.addTorrentDS2Direct(ctx, sid, torrentPath, dest)
+	if err != nil {
+		return nil, err
 	}
-	// Compatibility fallback based on known working community implementation.
-	if err := c.addTorrentCreateListStyle(ctx, sid, torrentPath, destination); err == nil {
-		return nil
+	if err := validateDirectTaskCreated(taskIDs, listIDs); err != nil {
+		return nil, err
 	}
-	return lastErr
+	return taskIDs, nil
 }
 
 func (c *Client) getDefaultDestination(ctx context.Context, sid string) (string, error) {
@@ -459,84 +417,6 @@ func (c *Client) getDefaultDestination(ctx context.Context, sid string) (string,
 	return out.Data.DefaultDestination, nil
 }
 
-func (c *Client) addTorrentWithField(ctx context.Context, sid, torrentPath, destination, fieldName, mode, filename string) error {
-	f, err := os.Open(torrentPath)
-	if err != nil {
-		return fmt.Errorf("open torrent file: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	vals := c.baseValues(sid)
-	vals.Set("method", "create")
-	if destination != "" {
-		vals.Set("destination", destination)
-	}
-	// Synology officially documents two valid multipart strategies:
-	// 1) file as the only POST data; all other params in query
-	// 2) all params in POST data, with file part as the LAST parameter
-	var textFields [][2]string
-	if mode == "post_only" {
-		for _, key := range []string{"api", "version", "method", "_sid", "destination"} {
-			if v := vals.Get(key); v != "" {
-				textFields = append(textFields, [2]string{key, v})
-			}
-		}
-	}
-	body, contentType, err := buildTorrentMultipart(f, textFields, fieldName, filename)
-	if err != nil {
-		return err
-	}
-	u := c.Endpoint + c.Path
-	if mode == "query_only" {
-		u += "?" + vals.Encode()
-	}
-	resp, err := c.postTorrent(ctx, sid, u, body, contentType)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	return decodeBase(resp.Body)
-}
-
-func (c *Client) addTorrentCreateListStyle(ctx context.Context, sid, torrentPath, destination string) error {
-	f, size, err := openAndStatTorrent(torrentPath)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-
-	apiName := c.apiName()
-	// Keep this field set matching the proven reference implementation shape.
-	fields := [][2]string{
-		{"api", apiName},
-		{"method", "create"},
-		{"version", strconv.Itoa(c.Version)},
-		{"type", "\"file\""},
-		{"file", "[\"torrent\"]"},
-		{"create_list", "true"},
-		{"size", strconv.FormatInt(size, 10)},
-	}
-	if destination != "" {
-		fields = append(fields, [2]string{"destination", "\"" + destination + "\""})
-	}
-	body, contentType, err := buildTorrentMultipart(f, fields, "torrent", filepath.Base(torrentPath))
-	if err != nil {
-		return err
-	}
-	q := url.Values{}
-	q.Set("_sid", sid)
-	u := c.Endpoint + c.Path
-	// task.cgi/SYNO.DownloadStation.Task is used in some community clients.
-	if strings.HasSuffix(c.Path, "/task.cgi") {
-		u += "/" + apiName
-	}
-	resp, err := c.postTorrent(ctx, sid, u+"?"+q.Encode(), body, contentType)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	return decodeBase(resp.Body)
-}
 
 func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, destination string) ([]string, []string, error) {
 	f, size, err := openAndStatTorrent(torrentPath)
@@ -573,26 +453,7 @@ func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, dest
 }
 
 func (c *Client) List(ctx context.Context, sid string) ([]Task, error) {
-	if strings.Contains(c.apiName(), "DownloadStation2.") {
-		tasks, err := c.listFrom(ctx, c.apiName(), c.Version, c.Path, sid)
-		if err == nil {
-			return tasks, nil
-		}
-		return nil, err
-	}
-	tasks, err := c.listFrom(ctx, c.listAPIName(), c.listVersionOrTask(), c.listPathOrTask(), sid)
-	if err == nil && len(tasks) > 0 {
-		return tasks, nil
-	}
-	// Fallback to Task API list for mixed DSM variants.
-	fallbackTasks, fbErr := c.listFrom(ctx, c.apiName(), c.Version, c.Path, sid)
-	if fbErr == nil {
-		return fallbackTasks, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return nil, fbErr
+	return c.listFrom(ctx, c.apiName(), c.Version, c.Path, sid)
 }
 
 func (c *Client) listFrom(ctx context.Context, apiName string, version int, path, sid string) ([]Task, error) {
@@ -600,15 +461,11 @@ func (c *Client) listFrom(ctx context.Context, apiName string, version int, path
 	vals.Set("method", "list")
 	vals.Set("offset", "0")
 	vals.Set("limit", "-1")
-	if strings.Contains(apiName, "DownloadStation2.") {
-		additionalJSON, err := json.Marshal([]string{"detail", "transfer", "file"})
-		if err != nil {
-			return nil, fmt.Errorf("encode additional: %w", err)
-		}
-		vals.Set("additional", string(additionalJSON))
-	} else {
-		vals.Set("additional", "detail,transfer,file")
+	additionalJSON, err := json.Marshal([]string{"detail", "transfer", "file"})
+	if err != nil {
+		return nil, fmt.Errorf("encode additional: %w", err)
 	}
+	vals.Set("additional", string(additionalJSON))
 	var out listResponse
 	if err := c.doGETToPath(ctx, path, vals, &out); err != nil {
 		return nil, err
@@ -619,31 +476,22 @@ func (c *Client) listFrom(ctx context.Context, apiName string, version int, path
 	if len(out.Data.Task) > 0 {
 		return out.Data.Task, nil
 	}
-	if len(out.Data.List) > 0 {
-		return out.Data.List, nil
-	}
 	return out.Data.Tasks, nil
 }
 
 func (c *Client) Get(ctx context.Context, sid, id string) (*Task, error) {
 	vals := c.baseValues(sid)
-	if strings.Contains(c.apiName(), "DownloadStation2.") {
-		vals.Set("method", "get")
-		idJSON, err := json.Marshal([]string{id})
-		if err != nil {
-			return nil, fmt.Errorf("encode id: %w", err)
-		}
-		additionalJSON, err := json.Marshal([]string{"detail", "transfer", "file", "tracker", "peer"})
-		if err != nil {
-			return nil, fmt.Errorf("encode additional: %w", err)
-		}
-		vals.Set("id", string(idJSON))
-		vals.Set("additional", string(additionalJSON))
-	} else {
-		vals.Set("method", "getinfo")
-		vals.Set("id", id)
-		vals.Set("additional", "detail,transfer,file,tracker,peer")
+	vals.Set("method", "get")
+	idJSON, err := json.Marshal([]string{id})
+	if err != nil {
+		return nil, fmt.Errorf("encode id: %w", err)
 	}
+	additionalJSON, err := json.Marshal([]string{"detail", "transfer", "file", "tracker", "peer"})
+	if err != nil {
+		return nil, fmt.Errorf("encode additional: %w", err)
+	}
+	vals.Set("id", string(idJSON))
+	vals.Set("additional", string(additionalJSON))
 	var out listResponse
 	if err := c.doGET(ctx, vals, &out); err != nil {
 		return nil, err
@@ -653,9 +501,6 @@ func (c *Client) Get(ctx context.Context, sid, id string) (*Task, error) {
 	}
 	if len(out.Data.Task) > 0 {
 		return &out.Data.Task[0], nil
-	}
-	if len(out.Data.List) > 0 {
-		return &out.Data.List[0], nil
 	}
 	return nil, &APIError{Code: 401}
 }
@@ -759,26 +604,6 @@ func (c *Client) doGETToPath(ctx context.Context, path string, vals url.Values, 
 	return nil
 }
 
-func (c *Client) listPathOrTask() string {
-	if c.ListPath != "" {
-		return c.ListPath
-	}
-	return c.Path
-}
-
-func (c *Client) listVersionOrTask() int {
-	if c.ListVersion > 0 {
-		return c.ListVersion
-	}
-	return c.Version
-}
-
-func (c *Client) listAPIName() string {
-	if c.ListAPIName != "" {
-		return c.ListAPIName
-	}
-	return c.apiName()
-}
 
 func decodeBase(r io.Reader) error {
 	var out baseResponse

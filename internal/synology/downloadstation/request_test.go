@@ -27,47 +27,6 @@ func TestPauseBuildsExpectedQuery(t *testing.T) {
 	}
 }
 
-func TestAddTorrentMultipart(t *testing.T) {
-	var api, method, version, sid, destination, filename string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		api = q.Get("api")
-		method = q.Get("method")
-		version = q.Get("version")
-		sid = q.Get("_sid")
-		destination = q.Get("destination")
-		mr, err := r.MultipartReader()
-		if err != nil {
-			t.Fatalf("MultipartReader error: %v", err)
-		}
-		for {
-			part, err := mr.NextPart()
-			if err != nil {
-				break
-			}
-			if part.FormName() == "file" {
-				filename = part.FileName()
-			}
-		}
-		_, _ = w.Write([]byte(`{"success":true}`))
-	}))
-	defer ts.Close()
-	tmpDir := t.TempDir()
-	torrentPath := filepath.Join(tmpDir, "x.torrent")
-	if err := os.WriteFile(torrentPath, []byte("dummy"), 0o644); err != nil {
-		t.Fatalf("write torrent file: %v", err)
-	}
-	c := &Client{Endpoint: ts.URL, Path: "/task", Version: 1, HTTP: ts.Client()}
-	if _, err := c.AddTorrent(context.Background(), "sidv", torrentPath, "downloads"); err != nil {
-		t.Fatalf("AddTorrent error: %v", err)
-	}
-	if api != "SYNO.DownloadStation.Task" || method != "create" || version != "1" || sid != "sidv" || destination != "downloads" {
-		t.Fatalf("unexpected multipart fields api=%q method=%q version=%q sid=%q destination=%q", api, method, version, sid, destination)
-	}
-	if filename != "x.torrent" && filename != "upload.torrent" {
-		t.Fatalf("unexpected filename: %q", filename)
-	}
-}
 
 func TestListIncludesUnlimitedPaging(t *testing.T) {
 	var rawQuery string
@@ -177,14 +136,11 @@ func TestDS2ListUsesTaskAPIFirst(t *testing.T) {
 	}))
 	defer ts.Close()
 	c := &Client{
-		Endpoint:    ts.URL,
-		Path:        "/webapi/entry.cgi",
-		Version:     2,
-		APIName:     "SYNO.DownloadStation2.Task",
-		ListPath:    "/webapi/entry.cgi",
-		ListVersion: 2,
-		ListAPIName: "SYNO.DownloadStation2.Task.List",
-		HTTP:        ts.Client(),
+		Endpoint: ts.URL,
+		Path:     "/webapi/entry.cgi",
+		Version:  2,
+		APIName:  "SYNO.DownloadStation2.Task",
+		HTTP:     ts.Client(),
 	}
 	tasks, err := c.List(context.Background(), "sidv")
 	if err != nil {
@@ -214,14 +170,11 @@ func TestDS2ListEmptyDoesNotFallbackToTaskList(t *testing.T) {
 	}))
 	defer ts.Close()
 	c := &Client{
-		Endpoint:    ts.URL,
-		Path:        "/webapi/entry.cgi",
-		Version:     2,
-		APIName:     "SYNO.DownloadStation2.Task",
-		ListPath:    "/webapi/entry.cgi",
-		ListVersion: 2,
-		ListAPIName: "SYNO.DownloadStation2.Task.List",
-		HTTP:        ts.Client(),
+		Endpoint: ts.URL,
+		Path:     "/webapi/entry.cgi",
+		Version:  2,
+		APIName:  "SYNO.DownloadStation2.Task",
+		HTTP:     ts.Client(),
 	}
 	tasks, err := c.List(context.Background(), "sidv")
 	if err != nil {
@@ -310,45 +263,3 @@ func TestDS2GetUsesGetMethodAndJSONArrayID(t *testing.T) {
 	}
 }
 
-func TestLegacyGetUsesGetInfoMethod(t *testing.T) {
-	var method, idParam, additional string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		method = q.Get("method")
-		idParam = q.Get("id")
-		additional = q.Get("additional")
-		resp := map[string]any{
-			"success": true,
-			"data": map[string]any{
-				"tasks": []map[string]any{
-					{"id": "dbid_1", "title": "t", "status": "paused"},
-				},
-			},
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer ts.Close()
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/DownloadStation/task.cgi",
-		Version:  1,
-		APIName:  "SYNO.DownloadStation.Task",
-		HTTP:     ts.Client(),
-	}
-	task, err := c.Get(context.Background(), "sidv", "dbid_1")
-	if err != nil {
-		t.Fatalf("Get error: %v", err)
-	}
-	if task.ID != "dbid_1" {
-		t.Fatalf("unexpected task id: %q", task.ID)
-	}
-	if method != "getinfo" {
-		t.Fatalf("expected method=getinfo, got %q", method)
-	}
-	if idParam != "dbid_1" {
-		t.Fatalf("expected plain id, got %q", idParam)
-	}
-	if additional != "detail,transfer,file,tracker,peer" {
-		t.Fatalf("unexpected additional: %q", additional)
-	}
-}
