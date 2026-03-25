@@ -345,3 +345,98 @@ func TestDS2AddTorrentEscapesDestinationJSON(t *testing.T) {
 		t.Fatalf("unexpected decoded destination: %q", decoded)
 	}
 }
+
+func TestDS2AddTorrentUsesDefaultDestinationWhenMissing(t *testing.T) {
+	var destinationRaw string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/webapi/DownloadStation/info.cgi":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"default_destination":"from_config"}}`))
+		case "/webapi/entry.cgi/SYNO.DownloadStation2.Task":
+			mr, err := r.MultipartReader()
+			if err != nil {
+				t.Fatalf("MultipartReader error: %v", err)
+			}
+			for {
+				part, err := mr.NextPart()
+				if err != nil {
+					break
+				}
+				if part.FileName() != "" {
+					continue
+				}
+				b, err := io.ReadAll(part)
+				if err != nil {
+					t.Fatalf("read part error: %v", err)
+				}
+				if part.FormName() == "destination" {
+					destinationRaw = string(b)
+				}
+			}
+			_, _ = w.Write([]byte(`{"success":true,"data":{"task_id":["dbid_1"]}}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	torrentPath := filepath.Join(tmpDir, "x.torrent")
+	if err := os.WriteFile(torrentPath, []byte("dummy"), 0o644); err != nil {
+		t.Fatalf("write torrent file: %v", err)
+	}
+
+	c := &Client{
+		Endpoint: ts.URL,
+		Path:     "/webapi/entry.cgi",
+		Version:  2,
+		APIName:  "SYNO.DownloadStation2.Task",
+		HTTP:     ts.Client(),
+	}
+	taskIDs, err := c.AddTorrent(context.Background(), "sidv", torrentPath, "")
+	if err != nil {
+		t.Fatalf("AddTorrent error: %v", err)
+	}
+	if len(taskIDs) != 1 || taskIDs[0] != "dbid_1" {
+		t.Fatalf("unexpected task ids: %#v", taskIDs)
+	}
+
+	var decoded string
+	if err := json.Unmarshal([]byte(destinationRaw), &decoded); err != nil {
+		t.Fatalf("destination is not valid JSON string: %v", err)
+	}
+	if decoded != "from_config" {
+		t.Fatalf("unexpected decoded destination: %q", decoded)
+	}
+}
+
+func TestDS2AddTorrentFailsWhenDefaultDestinationEmpty(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/webapi/DownloadStation/info.cgi" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"default_destination":""}}`))
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	torrentPath := filepath.Join(tmpDir, "x.torrent")
+	if err := os.WriteFile(torrentPath, []byte("dummy"), 0o644); err != nil {
+		t.Fatalf("write torrent file: %v", err)
+	}
+
+	c := &Client{
+		Endpoint: ts.URL,
+		Path:     "/webapi/entry.cgi",
+		Version:  2,
+		APIName:  "SYNO.DownloadStation2.Task",
+		HTTP:     ts.Client(),
+	}
+	_, err := c.AddTorrent(context.Background(), "sidv", torrentPath, "")
+	if err == nil {
+		t.Fatalf("expected error for empty default destination")
+	}
+	if !strings.Contains(err.Error(), "default_destination is empty") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
