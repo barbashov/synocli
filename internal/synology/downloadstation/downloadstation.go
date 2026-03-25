@@ -341,7 +341,11 @@ func (c *Client) AddURI(ctx context.Context, sid, uri, destination string) ([]st
 	vals := c.baseValues(sid)
 	vals.Set("method", "create")
 	vals.Set("type", "url")
-	vals.Set("url", fmt.Sprintf("[\"%s\"]", uri))
+	urlJSON, err := json.Marshal([]string{uri})
+	if err != nil {
+		return nil, fmt.Errorf("encode url: %w", err)
+	}
+	vals.Set("url", string(urlJSON))
 	vals.Set("create_list", "false")
 	if destination != "" {
 		vals.Set("destination", destination)
@@ -417,7 +421,6 @@ func (c *Client) getDefaultDestination(ctx context.Context, sid string) (string,
 	return out.Data.DefaultDestination, nil
 }
 
-
 func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, destination string) ([]string, []string, error) {
 	f, size, err := openAndStatTorrent(torrentPath)
 	if err != nil {
@@ -426,17 +429,29 @@ func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, dest
 	defer func() { _ = f.Close() }()
 
 	apiName := c.apiName()
+	typeJSON, err := json.Marshal("file")
+	if err != nil {
+		return nil, nil, fmt.Errorf("encode type: %w", err)
+	}
+	fileJSON, err := json.Marshal([]string{"torrent"})
+	if err != nil {
+		return nil, nil, fmt.Errorf("encode file field: %w", err)
+	}
 	fields := [][2]string{
 		{"api", apiName},
 		{"method", "create"},
 		{"version", strconv.Itoa(c.Version)},
-		{"type", "\"file\""},
-		{"file", "[\"torrent\"]"},
+		{"type", string(typeJSON)},
+		{"file", string(fileJSON)},
 		{"create_list", "false"},
 		{"size", strconv.FormatInt(size, 10)},
 	}
 	if destination != "" {
-		fields = append(fields, [2]string{"destination", "\"" + destination + "\""})
+		destJSON, err := json.Marshal(destination)
+		if err != nil {
+			return nil, nil, fmt.Errorf("encode destination: %w", err)
+		}
+		fields = append(fields, [2]string{"destination", string(destJSON)})
 	}
 	body, contentType, err := buildTorrentMultipart(f, fields, "torrent", filepath.Base(torrentPath))
 	if err != nil {
@@ -603,7 +618,6 @@ func (c *Client) doGETToPath(ctx context.Context, path string, vals url.Values, 
 	}
 	return nil
 }
-
 
 func decodeBase(r io.Reader) error {
 	var out baseResponse

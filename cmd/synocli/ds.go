@@ -278,6 +278,9 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 		Short: "Wait for a task to finish or fail",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validatePositiveDuration("--interval", interval); err != nil {
+				return err
+			}
 			endpoint, id := args[0], args[1]
 			return ac.withSession(cmd, endpoint, joinCommand("ds", "wait"), func(ctx context.Context, s *session) (any, error) {
 				deadline := time.Time{}
@@ -327,6 +330,9 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 		Short: "Watch task state",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validatePositiveDuration("--interval", interval); err != nil {
+				return err
+			}
 			endpoint := args[0]
 			return ac.withStreamingSession(cmd, endpoint, joinCommand("ds", "watch"), func(ctx context.Context, s *session) error {
 				statusSet := make(map[string]struct{}, len(statuses))
@@ -383,6 +389,13 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 	cmd.Flags().StringSliceVar(&ids, "id", nil, "Filter by task ID")
 	cmd.Flags().StringSliceVar(&statuses, "status", nil, "Filter by normalized status")
 	return cmd
+}
+
+func validatePositiveDuration(flagName string, value time.Duration) error {
+	if value <= 0 {
+		return apperr.New("validation_error", fmt.Sprintf("%s must be greater than 0", flagName), 1)
+	}
+	return nil
 }
 
 func filterTasks(tasks []downloadstation.Task, idSet, statusSet map[string]struct{}) []downloadstation.Task {

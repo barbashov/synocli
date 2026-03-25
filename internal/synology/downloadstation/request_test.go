@@ -3,6 +3,7 @@ package downloadstation
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,7 +27,6 @@ func TestPauseBuildsExpectedQuery(t *testing.T) {
 		t.Fatalf("unexpected query: %s", rawQuery)
 	}
 }
-
 
 func TestListIncludesUnlimitedPaging(t *testing.T) {
 	var rawQuery string
@@ -117,6 +117,31 @@ func TestDS2AddURIReturnsTaskIDs(t *testing.T) {
 	}
 	if len(taskIDs) != 1 || taskIDs[0] != "dbid_1" {
 		t.Fatalf("unexpected task ids: %#v", taskIDs)
+	}
+}
+
+func TestDS2AddURIEscapesJSONInput(t *testing.T) {
+	uri := `https://example.com/file"name\segment?x=1&y=2`
+	var decoded []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.Unmarshal([]byte(r.URL.Query().Get("url")), &decoded); err != nil {
+			t.Fatalf("url parameter is not valid JSON array: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"task_id":["dbid_1"]}}`))
+	}))
+	defer ts.Close()
+	c := &Client{
+		Endpoint: ts.URL,
+		Path:     "/webapi/entry.cgi",
+		Version:  2,
+		APIName:  "SYNO.DownloadStation2.Task",
+		HTTP:     ts.Client(),
+	}
+	if _, err := c.AddURI(context.Background(), "sidv", uri, "downloads"); err != nil {
+		t.Fatalf("AddURI error: %v", err)
+	}
+	if len(decoded) != 1 || decoded[0] != uri {
+		t.Fatalf("unexpected decoded url payload: %#v", decoded)
 	}
 }
 
@@ -263,3 +288,60 @@ func TestDS2GetUsesGetMethodAndJSONArrayID(t *testing.T) {
 	}
 }
 
+func TestDS2AddTorrentEscapesDestinationJSON(t *testing.T) {
+	destination := `my "downloads"\folder`
+	var destinationRaw string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mr, err := r.MultipartReader()
+		if err != nil {
+			t.Fatalf("MultipartReader error: %v", err)
+		}
+		for {
+			part, err := mr.NextPart()
+			if err != nil {
+				break
+			}
+			if part.FileName() != "" {
+				continue
+			}
+			b, err := io.ReadAll(part)
+			if err != nil {
+				t.Fatalf("read part error: %v", err)
+			}
+			if part.FormName() == "destination" {
+				destinationRaw = string(b)
+			}
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"task_id":["dbid_1"]}}`))
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	torrentPath := filepath.Join(tmpDir, "x.torrent")
+	if err := os.WriteFile(torrentPath, []byte("dummy"), 0o644); err != nil {
+		t.Fatalf("write torrent file: %v", err)
+	}
+
+	c := &Client{
+		Endpoint: ts.URL,
+		Path:     "/webapi/entry.cgi",
+		Version:  2,
+		APIName:  "SYNO.DownloadStation2.Task",
+		HTTP:     ts.Client(),
+	}
+	taskIDs, err := c.AddTorrent(context.Background(), "sidv", torrentPath, destination)
+	if err != nil {
+		t.Fatalf("AddTorrent error: %v", err)
+	}
+	if len(taskIDs) != 1 || taskIDs[0] != "dbid_1" {
+		t.Fatalf("unexpected task ids: %#v", taskIDs)
+	}
+
+	var decoded string
+	if err := json.Unmarshal([]byte(destinationRaw), &decoded); err != nil {
+		t.Fatalf("destination is not valid JSON string: %v", err)
+	}
+	if decoded != destination {
+		t.Fatalf("unexpected decoded destination: %q", decoded)
+	}
+}

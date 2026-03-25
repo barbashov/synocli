@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"synocli/internal/synology/downloadstation"
@@ -24,5 +25,41 @@ func TestMapTaskIncludesStatusEnumFields(t *testing.T) {
 	code, ok := m["status_code"].(int)
 	if !ok || code != 3 {
 		t.Fatalf("status_code=%v want int(3)", m["status_code"])
+	}
+}
+
+func TestWaitRejectsNonPositiveInterval(t *testing.T) {
+	tests := []string{"0s", "-1s"}
+	for _, interval := range tests {
+		t.Run(interval, func(t *testing.T) {
+			ac := &appContext{}
+			cmd := newDSWaitCmd(ac)
+			cmd.SetArgs([]string{"https://example.com:5001", "dbid_1", "--interval", interval})
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), "--interval must be greater than 0") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestWatchRejectsNonPositiveInterval(t *testing.T) {
+	tests := []string{"0s", "-1s"}
+	for _, interval := range tests {
+		t.Run(interval, func(t *testing.T) {
+			ac := &appContext{}
+			cmd := newDSWatchCmd(ac)
+			cmd.SetArgs([]string{"https://example.com:5001", "--interval", interval})
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), "--interval must be greater than 0") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
