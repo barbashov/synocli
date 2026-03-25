@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/charmbracelet/lipgloss"
 
 	"synocli/internal/apperr"
 	"synocli/internal/output"
@@ -53,6 +56,14 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 				} else {
 					_, _ = fmt.Fprintf(ac.out, "added URL download: %s\n", uri)
 				}
+				for _, tid := range taskIDs {
+					task, err := s.dsClient.Get(ctx, s.sid, tid)
+					if err != nil {
+						continue
+					}
+					_, _ = fmt.Fprintln(ac.out)
+					printTaskDetail(ac.out, *task)
+				}
 				return nil, nil
 			})
 		},
@@ -77,6 +88,14 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					_, _ = fmt.Fprintf(ac.out, "added magnet download (task_ids=%s)\n", strings.Join(taskIDs, ","))
 				} else {
 					_, _ = fmt.Fprintln(ac.out, "added magnet download")
+				}
+				for _, tid := range taskIDs {
+					task, err := s.dsClient.Get(ctx, s.sid, tid)
+					if err != nil {
+						continue
+					}
+					_, _ = fmt.Fprintln(ac.out)
+					printTaskDetail(ac.out, *task)
 				}
 				return nil, nil
 			})
@@ -105,6 +124,14 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					_, _ = fmt.Fprintf(ac.out, "added torrent: %s (task_ids=%s)\n", torrentPath, strings.Join(taskIDs, ","))
 				} else {
 					_, _ = fmt.Fprintf(ac.out, "added torrent: %s\n", torrentPath)
+				}
+				for _, tid := range taskIDs {
+					task, err := s.dsClient.Get(ctx, s.sid, tid)
+					if err != nil {
+						continue
+					}
+					_, _ = fmt.Fprintln(ac.out)
+					printTaskDetail(ac.out, *task)
 				}
 				return nil, nil
 			})
@@ -137,19 +164,19 @@ func newDSListCmd(ac *appContext) *cobra.Command {
 					rows = append(rows, []string{
 						t.ID,
 						t.Title,
-						downloadstation.NormalizeStatus(t.Status),
 						downloadstation.StatusDisplay(t.Status),
 						t.Type,
 						valueOrDash(destinationOf(t)),
-						fmt.Sprintf("%d", t.Size),
-						fmt.Sprintf("%d", downloadedOf(t)),
-						fmt.Sprintf("%d", uploadedOf(t)),
-						fmt.Sprintf("%d", downSpeedOf(t)),
-						fmt.Sprintf("%d", upSpeedOf(t)),
+						formatBytes(t.Size),
+						formatBytes(downloadedOf(t)),
+						formatPercent(downloadedOf(t), t.Size),
+						formatBytes(uploadedOf(t)),
+						formatSpeed(downSpeedOf(t)),
+						formatSpeed(upSpeedOf(t)),
 					})
 				}
 				printTable(ac.out,
-					[]string{"id", "title", "normalized", "raw", "type", "destination", "size", "downloaded", "uploaded", "down_speed", "up_speed"},
+					[]string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "Up Speed"},
 					rows,
 				)
 				return nil, nil
@@ -175,22 +202,7 @@ func newDSGetCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return mapped, nil
 				}
-				for _, line := range []string{
-					fmt.Sprintf("id: %s", t.ID),
-					fmt.Sprintf("title: %s", t.Title),
-					fmt.Sprintf("status: %s", downloadstation.StatusDisplay(t.Status)),
-					fmt.Sprintf("type: %s", t.Type),
-					fmt.Sprintf("destination: %s", valueOrDash(destinationOf(*t))),
-					fmt.Sprintf("size: %d", t.Size),
-					fmt.Sprintf("downloaded: %d", downloadedOf(*t)),
-					fmt.Sprintf("uploaded: %d", uploadedOf(*t)),
-					fmt.Sprintf("download_speed: %d", downSpeedOf(*t)),
-					fmt.Sprintf("upload_speed: %d", upSpeedOf(*t)),
-					fmt.Sprintf("uri: %s", valueOrDash(uriOf(*t))),
-					fmt.Sprintf("status_extra: %s", valueOrDash(t.StatusExtra)),
-				} {
-					_, _ = fmt.Fprintln(ac.out, line)
-				}
+				printTaskDetail(ac.out, *t)
 				return nil, nil
 			})
 		},
@@ -342,9 +354,21 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 						_, _ = fmt.Fprintf(ac.out, "[%s] tasks=%d\n", time.Now().Format(time.RFC3339), len(filtered))
 						rows := make([][]string, 0, len(filtered))
 						for _, t := range filtered {
-							rows = append(rows, []string{t.ID, t.Title, downloadstation.NormalizeStatus(t.Status), downloadstation.StatusDisplay(t.Status), fmt.Sprintf("%d", downSpeedOf(t))})
+							rows = append(rows, []string{
+								t.ID,
+								t.Title,
+								downloadstation.StatusDisplay(t.Status),
+								t.Type,
+								valueOrDash(destinationOf(t)),
+								formatBytes(t.Size),
+								formatBytes(downloadedOf(t)),
+								formatPercent(downloadedOf(t), t.Size),
+								formatBytes(uploadedOf(t)),
+								formatSpeed(downSpeedOf(t)),
+								formatSpeed(upSpeedOf(t)),
+							})
 						}
-						printTable(ac.out, []string{"id", "title", "normalized", "raw", "down_speed"}, rows)
+						printTable(ac.out, []string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "Up Speed"}, rows)
 					}
 					select {
 					case <-ctx.Done():
@@ -500,6 +524,27 @@ func fileOf(t downloadstation.Task) any {
 		return t.Additional.File
 	}
 	return nil
+}
+
+func printTaskDetail(w io.Writer, t downloadstation.Task) {
+	label := lipgloss.NewStyle().Bold(true).Width(16)
+	for _, line := range []string{
+		label.Render("ID:") + t.ID,
+		label.Render("Title:") + t.Title,
+		label.Render("Status:") + downloadstation.StatusDisplay(t.Status),
+		label.Render("Type:") + t.Type,
+		label.Render("Destination:") + valueOrDash(destinationOf(t)),
+		label.Render("Size:") + formatBytes(t.Size),
+		label.Render("Downloaded:") + formatBytes(downloadedOf(t)),
+		label.Render("Progress:") + formatPercent(downloadedOf(t), t.Size),
+		label.Render("Uploaded:") + formatBytes(uploadedOf(t)),
+		label.Render("Down Speed:") + formatSpeed(downSpeedOf(t)),
+		label.Render("Up Speed:") + formatSpeed(upSpeedOf(t)),
+		label.Render("URI:") + valueOrDash(uriOf(t)),
+		label.Render("Status Extra:") + valueOrDash(t.StatusExtra),
+	} {
+		_, _ = fmt.Fprintln(w, line)
+	}
 }
 
 func valueOrDash(s string) string {

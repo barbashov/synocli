@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 
 	"synocli/internal/apperr"
@@ -287,8 +289,15 @@ func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, task
 }
 
 func printTable(w io.Writer, headers []string, rows [][]string) {
-	_, _ = fmt.Fprintln(w, strings.Join(headers, "\t"))
-	for _, row := range rows {
-		_, _ = fmt.Fprintln(w, strings.Join(row, "\t"))
-	}
+	t := table.New().
+		Headers(headers...).
+		Rows(rows...).
+		BorderRow(false).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return lipgloss.NewStyle().Bold(true)
+			}
+			return lipgloss.NewStyle()
+		})
+	_, _ = fmt.Fprintln(w, t.Render())
 }

@@ -600,7 +600,15 @@ func (c *Client) listFrom(ctx context.Context, apiName string, version int, path
 	vals.Set("method", "list")
 	vals.Set("offset", "0")
 	vals.Set("limit", "-1")
-	vals.Set("additional", "detail,file")
+	if strings.Contains(apiName, "DownloadStation2.") {
+		additionalJSON, err := json.Marshal([]string{"detail", "transfer", "file"})
+		if err != nil {
+			return nil, fmt.Errorf("encode additional: %w", err)
+		}
+		vals.Set("additional", string(additionalJSON))
+	} else {
+		vals.Set("additional", "detail,transfer,file")
+	}
 	var out listResponse
 	if err := c.doGETToPath(ctx, path, vals, &out); err != nil {
 		return nil, err
