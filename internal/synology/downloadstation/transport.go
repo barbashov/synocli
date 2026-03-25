@@ -11,11 +11,11 @@ import (
 )
 
 func (c *Client) doGET(ctx context.Context, vals url.Values, out any) error {
-	return c.doGETToPath(ctx, c.Path, vals, out)
+	return c.doGETToPath(ctx, c.path, vals, out)
 }
 
 func (c *Client) doGETCreateToPath(ctx context.Context, path string, vals url.Values) ([]string, []string, error) {
-	u := c.Endpoint + path + "?" + vals.Encode()
+	u := c.endpoint + path + "?" + vals.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build request: %w", err)
@@ -23,7 +23,7 @@ func (c *Client) doGETCreateToPath(ctx context.Context, path string, vals url.Va
 	if sid := vals.Get("_sid"); sid != "" {
 		req.AddCookie(&http.Cookie{Name: "id", Value: sid})
 	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -32,7 +32,7 @@ func (c *Client) doGETCreateToPath(ctx context.Context, path string, vals url.Va
 }
 
 func (c *Client) doGETToPath(ctx context.Context, path string, vals url.Values, out any) error {
-	u := c.Endpoint + path + "?" + vals.Encode()
+	u := c.endpoint + path + "?" + vals.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
@@ -40,7 +40,7 @@ func (c *Client) doGETToPath(ctx context.Context, path string, vals url.Values, 
 	if sid := vals.Get("_sid"); sid != "" {
 		req.AddCookie(&http.Cookie{Name: "id", Value: sid})
 	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}

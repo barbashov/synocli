@@ -6,12 +6,12 @@ import (
 	"fmt"
 )
 
-func (c *Client) List(ctx context.Context, sid string) ([]Task, error) {
-	return c.listFrom(ctx, c.apiName(), c.Version, c.Path, sid)
+func (c *Client) List(ctx context.Context) ([]Task, error) {
+	return c.listFrom(ctx, c.taskAPIName(), c.version, c.path)
 }
 
-func (c *Client) listFrom(ctx context.Context, apiName string, version int, path, sid string) ([]Task, error) {
-	vals := c.baseValuesFor(apiName, version, sid)
+func (c *Client) listFrom(ctx context.Context, apiName string, version int, path string) ([]Task, error) {
+	vals := c.baseValuesFor(apiName, version)
 	vals.Set("method", "list")
 	vals.Set("offset", "0")
 	vals.Set("limit", "-1")
@@ -33,8 +33,8 @@ func (c *Client) listFrom(ctx context.Context, apiName string, version int, path
 	return out.Data.Tasks, nil
 }
 
-func (c *Client) Get(ctx context.Context, sid, id string) (*Task, error) {
-	vals := c.baseValues(sid)
+func (c *Client) Get(ctx context.Context, id string) (*Task, error) {
+	vals := c.baseValues()
 	vals.Set("method", "get")
 	idJSON, err := json.Marshal([]string{id})
 	if err != nil {

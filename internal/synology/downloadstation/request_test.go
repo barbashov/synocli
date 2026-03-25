@@ -12,6 +12,25 @@ import (
 	"testing"
 )
 
+func mustNewClient(t *testing.T, endpoint, sid string, httpClient *http.Client, path string, version int, apiName string) *Client {
+	t.Helper()
+	c, err := NewClient(endpoint, sid, httpClient, path, version, apiName)
+	if err != nil {
+		t.Fatalf("NewClient error: %v", err)
+	}
+	return c
+}
+
+func newV1TestClient(t *testing.T, endpoint, sid string, httpClient *http.Client) *Client {
+	t.Helper()
+	return mustNewClient(t, endpoint, sid, httpClient, "/task", 1, "")
+}
+
+func newDS2TestClient(t *testing.T, endpoint, sid string, httpClient *http.Client) *Client {
+	t.Helper()
+	return mustNewClient(t, endpoint, sid, httpClient, "/webapi/entry.cgi", 2, "SYNO.DownloadStation2.Task")
+}
+
 func TestPauseBuildsExpectedQuery(t *testing.T) {
 	var rawQuery string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -19,8 +38,8 @@ func TestPauseBuildsExpectedQuery(t *testing.T) {
 		_, _ = w.Write([]byte(`{"success":true}`))
 	}))
 	defer ts.Close()
-	c := &Client{Endpoint: ts.URL, Path: "/task", Version: 1, HTTP: ts.Client()}
-	if err := c.Pause(context.Background(), "sid123", []string{"a", "b"}); err != nil {
+	c := newV1TestClient(t, ts.URL, "sid123", ts.Client())
+	if err := c.Pause(context.Background(), []string{"a", "b"}); err != nil {
 		t.Fatalf("Pause error: %v", err)
 	}
 	if !strings.Contains(rawQuery, "method=pause") || !strings.Contains(rawQuery, "id=a%2Cb") || !strings.Contains(rawQuery, "_sid=sid123") {
@@ -35,8 +54,8 @@ func TestListIncludesUnlimitedPaging(t *testing.T) {
 		_, _ = w.Write([]byte(`{"success":true,"data":{"tasks":[]}}`))
 	}))
 	defer ts.Close()
-	c := &Client{Endpoint: ts.URL, Path: "/task", Version: 1, HTTP: ts.Client()}
-	if _, err := c.List(context.Background(), "sid123"); err != nil {
+	c := newV1TestClient(t, ts.URL, "sid123", ts.Client())
+	if _, err := c.List(context.Background()); err != nil {
 		t.Fatalf("List error: %v", err)
 	}
 	if !strings.Contains(rawQuery, "offset=0") || !strings.Contains(rawQuery, "limit=-1") {
@@ -74,14 +93,8 @@ func TestDS2AddTorrentRequiresTaskID(t *testing.T) {
 	if err := os.WriteFile(torrentPath, []byte("dummy"), 0o644); err != nil {
 		t.Fatalf("write torrent file: %v", err)
 	}
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	_, err := c.AddTorrent(context.Background(), "sidv", torrentPath, "downloads")
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	_, err := c.AddTorrent(context.Background(), torrentPath, "downloads")
 	if err == nil {
 		t.Fatalf("expected error when task_id is empty")
 	}
@@ -104,14 +117,8 @@ func TestDS2AddURIReturnsTaskIDs(t *testing.T) {
 		_, _ = w.Write([]byte(`{"success":true,"data":{"task_id":["dbid_1"]}}`))
 	}))
 	defer ts.Close()
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	taskIDs, err := c.AddURI(context.Background(), "sidv", "magnet:?xt=urn:btih:abc", "downloads")
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	taskIDs, err := c.AddURI(context.Background(), "magnet:?xt=urn:btih:abc", "downloads")
 	if err != nil {
 		t.Fatalf("AddURI error: %v", err)
 	}
@@ -130,14 +137,8 @@ func TestDS2AddURIEscapesJSONInput(t *testing.T) {
 		_, _ = w.Write([]byte(`{"success":true,"data":{"task_id":["dbid_1"]}}`))
 	}))
 	defer ts.Close()
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	if _, err := c.AddURI(context.Background(), "sidv", uri, "downloads"); err != nil {
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	if _, err := c.AddURI(context.Background(), uri, "downloads"); err != nil {
 		t.Fatalf("AddURI error: %v", err)
 	}
 	if len(decoded) != 1 || decoded[0] != uri {
@@ -160,14 +161,8 @@ func TestDS2ListUsesTaskAPIFirst(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer ts.Close()
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	tasks, err := c.List(context.Background(), "sidv")
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	tasks, err := c.List(context.Background())
 	if err != nil {
 		t.Fatalf("List error: %v", err)
 	}
@@ -194,14 +189,8 @@ func TestDS2ListEmptyDoesNotFallbackToTaskList(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer ts.Close()
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	tasks, err := c.List(context.Background(), "sidv")
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	tasks, err := c.List(context.Background())
 	if err != nil {
 		t.Fatalf("List error: %v", err)
 	}
@@ -226,14 +215,8 @@ func TestDS2ListSupportsNumericStatus(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer ts.Close()
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	tasks, err := c.List(context.Background(), "sidv")
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	tasks, err := c.List(context.Background())
 	if err != nil {
 		t.Fatalf("List error: %v", err)
 	}
@@ -263,14 +246,8 @@ func TestDS2GetUsesGetMethodAndJSONArrayID(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer ts.Close()
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	task, err := c.Get(context.Background(), "sidv", "dbid_3887")
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	task, err := c.Get(context.Background(), "dbid_3887")
 	if err != nil {
 		t.Fatalf("Get error: %v", err)
 	}
@@ -322,14 +299,8 @@ func TestDS2AddTorrentEscapesDestinationJSON(t *testing.T) {
 		t.Fatalf("write torrent file: %v", err)
 	}
 
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	taskIDs, err := c.AddTorrent(context.Background(), "sidv", torrentPath, destination)
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	taskIDs, err := c.AddTorrent(context.Background(), torrentPath, destination)
 	if err != nil {
 		t.Fatalf("AddTorrent error: %v", err)
 	}
@@ -386,14 +357,8 @@ func TestDS2AddTorrentUsesDefaultDestinationWhenMissing(t *testing.T) {
 		t.Fatalf("write torrent file: %v", err)
 	}
 
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	taskIDs, err := c.AddTorrent(context.Background(), "sidv", torrentPath, "")
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	taskIDs, err := c.AddTorrent(context.Background(), torrentPath, "")
 	if err != nil {
 		t.Fatalf("AddTorrent error: %v", err)
 	}
@@ -425,14 +390,8 @@ func TestDS2AddTorrentFailsWhenDefaultDestinationEmpty(t *testing.T) {
 		t.Fatalf("write torrent file: %v", err)
 	}
 
-	c := &Client{
-		Endpoint: ts.URL,
-		Path:     "/webapi/entry.cgi",
-		Version:  2,
-		APIName:  "SYNO.DownloadStation2.Task",
-		HTTP:     ts.Client(),
-	}
-	_, err := c.AddTorrent(context.Background(), "sidv", torrentPath, "")
+	c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+	_, err := c.AddTorrent(context.Background(), torrentPath, "")
 	if err == nil {
 		t.Fatalf("expected error for empty default destination")
 	}

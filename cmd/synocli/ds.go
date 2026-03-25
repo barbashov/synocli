@@ -43,7 +43,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 			endpoint := args[0]
 			uri := args[1]
 			return ac.withSession(cmd, endpoint, joinCommand("ds", "add", "url"), func(ctx context.Context, s *session) (any, error) {
-				taskIDs, err := s.dsClient.AddURI(ctx, s.sid, uri, destination)
+				taskIDs, err := s.dsClient.AddURI(ctx, uri, destination)
 				if err != nil {
 					return nil, err
 				}
@@ -57,7 +57,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					_, _ = fmt.Fprintf(ac.out, "added URL download: %s\n", uri)
 				}
 				for _, tid := range taskIDs {
-					task, err := s.dsClient.Get(ctx, s.sid, tid)
+					task, err := s.dsClient.Get(ctx, tid)
 					if err != nil {
 						continue
 					}
@@ -76,7 +76,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 			endpoint := args[0]
 			magnet := args[1]
 			return ac.withSession(cmd, endpoint, joinCommand("ds", "add", "magnet"), func(ctx context.Context, s *session) (any, error) {
-				taskIDs, err := s.dsClient.AddURI(ctx, s.sid, magnet, destination)
+				taskIDs, err := s.dsClient.AddURI(ctx, magnet, destination)
 				if err != nil {
 					return nil, err
 				}
@@ -90,7 +90,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					_, _ = fmt.Fprintln(ac.out, "added magnet download")
 				}
 				for _, tid := range taskIDs {
-					task, err := s.dsClient.Get(ctx, s.sid, tid)
+					task, err := s.dsClient.Get(ctx, tid)
 					if err != nil {
 						continue
 					}
@@ -112,7 +112,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 				return apperr.Wrap("validation_error", "invalid torrent file", 1, err)
 			}
 			return ac.withSession(cmd, endpoint, joinCommand("ds", "add", "torrent"), func(ctx context.Context, s *session) (any, error) {
-				taskIDs, err := s.dsClient.AddTorrent(ctx, s.sid, torrentPath, destination)
+				taskIDs, err := s.dsClient.AddTorrent(ctx, torrentPath, destination)
 				if err != nil {
 					return nil, err
 				}
@@ -126,7 +126,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					_, _ = fmt.Fprintf(ac.out, "added torrent: %s\n", torrentPath)
 				}
 				for _, tid := range taskIDs {
-					task, err := s.dsClient.Get(ctx, s.sid, tid)
+					task, err := s.dsClient.Get(ctx, tid)
 					if err != nil {
 						continue
 					}
@@ -151,7 +151,7 @@ func newDSListCmd(ac *appContext) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ac.withSession(cmd, args[0], joinCommand("ds", "list"), func(ctx context.Context, s *session) (any, error) {
-				tasks, err := s.dsClient.List(ctx, s.sid)
+				tasks, err := s.dsClient.List(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -194,7 +194,7 @@ func newDSGetCmd(ac *appContext) *cobra.Command {
 			endpoint := args[0]
 			id := args[1]
 			return ac.withSession(cmd, endpoint, joinCommand("ds", "get"), func(ctx context.Context, s *session) (any, error) {
-				t, err := s.dsClient.Get(ctx, s.sid, id)
+				t, err := s.dsClient.Get(ctx, id)
 				if err != nil {
 					return nil, err
 				}
@@ -211,13 +211,13 @@ func newDSGetCmd(ac *appContext) *cobra.Command {
 
 func newDSPauseCmd(ac *appContext) *cobra.Command {
 	return actionWithIDs(ac, "pause", func(ctx context.Context, s *session, ids []string) error {
-		return s.dsClient.Pause(ctx, s.sid, ids)
+		return s.dsClient.Pause(ctx, ids)
 	})
 }
 
 func newDSResumeCmd(ac *appContext) *cobra.Command {
 	return actionWithIDs(ac, "resume", func(ctx context.Context, s *session, ids []string) error {
-		return s.dsClient.Resume(ctx, s.sid, ids)
+		return s.dsClient.Resume(ctx, ids)
 	})
 }
 
@@ -231,7 +231,7 @@ func newDSDeleteCmd(ac *appContext) *cobra.Command {
 			endpoint := args[0]
 			ids := args[1:]
 			return ac.withSession(cmd, endpoint, joinCommand("ds", "delete"), func(ctx context.Context, s *session) (any, error) {
-				if err := s.dsClient.Delete(ctx, s.sid, ids, withData); err != nil {
+				if err := s.dsClient.Delete(ctx, ids, withData); err != nil {
 					return nil, err
 				}
 				data := map[string]any{"task_ids": ids, "with_data": withData}
@@ -288,7 +288,7 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 					deadline = time.Now().Add(maxWait)
 				}
 				for {
-					task, err := s.dsClient.Get(ctx, s.sid, id)
+					task, err := s.dsClient.Get(ctx, id)
 					if err != nil {
 						return nil, err
 					}
@@ -344,7 +344,7 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 					idSet[id] = struct{}{}
 				}
 				for {
-					tasks, err := s.dsClient.List(ctx, s.sid)
+					tasks, err := s.dsClient.List(ctx)
 					if err != nil {
 						return err
 					}

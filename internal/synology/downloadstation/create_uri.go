@@ -6,8 +6,8 @@ import (
 	"fmt"
 )
 
-func (c *Client) AddURI(ctx context.Context, sid, uri, destination string) ([]string, error) {
-	vals := c.baseValues(sid)
+func (c *Client) AddURI(ctx context.Context, uri, destination string) ([]string, error) {
+	vals := c.baseValues()
 	vals.Set("method", "create")
 	vals.Set("type", "url")
 	urlJSON, err := json.Marshal([]string{uri})
@@ -19,7 +19,7 @@ func (c *Client) AddURI(ctx context.Context, sid, uri, destination string) ([]st
 	if destination != "" {
 		vals.Set("destination", destination)
 	}
-	taskIDs, listIDs, err := c.doGETCreateToPath(ctx, c.Path, vals)
+	taskIDs, listIDs, err := c.doGETCreateToPath(ctx, c.path, vals)
 	if err != nil {
 		return nil, err
 	}

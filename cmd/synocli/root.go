@@ -35,7 +35,6 @@ type session struct {
 	start       time.Time
 	authClient  *auth.Client
 	dsClient    *downloadstation.Client
-	sid         string
 	apiVersions map[string]int
 }
 
@@ -108,18 +107,13 @@ func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName stri
 
 	apiVersions := map[string]int{"auth": authVersion}
 	var dsClient *downloadstation.Client
+	var dsAPIName, dsPath string
+	var dsVersion int
 	if needsDS {
-		dsAPIName, dsPath, dsVersion := selectDownloadStationAPIs(entries)
+		dsAPIName, dsPath, dsVersion = selectDownloadStationAPIs(entries)
 		dsVersion = clampVersion(dsVersion, 3)
 		if a.opts.Debug {
 			_, _ = fmt.Fprintf(a.err, "[debug] selected task api=%s path=%s version=%d\n", dsAPIName, dsPath, dsVersion)
-		}
-		dsClient = &downloadstation.Client{
-			Endpoint: u.String(),
-			Path:     dsPath,
-			Version:  dsVersion,
-			APIName:  dsAPIName,
-			HTTP:     hc,
 		}
 		apiVersions["task"] = dsVersion
 	}
@@ -132,12 +126,17 @@ func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName stri
 	defer func() {
 		_ = authClient.Logout(context.Background(), sid)
 	}()
+	if needsDS {
+		dsClient, err = downloadstation.NewClient(u.String(), sid, hc, dsPath, dsVersion, dsAPIName)
+		if err != nil {
+			return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize download station client", 1, err))
+		}
+	}
 	s := &session{
 		endpoint:    u.String(),
 		start:       start,
 		authClient:  authClient,
 		dsClient:    dsClient,
-		sid:         sid,
 		apiVersions: apiVersions,
 	}
 	data, err := fn(ctx, s)

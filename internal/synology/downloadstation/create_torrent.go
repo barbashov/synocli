@@ -53,20 +53,20 @@ func buildTorrentMultipart(r io.Reader, textFields [][2]string, fileFieldName, f
 	return body, mw.FormDataContentType(), nil
 }
 
-func (c *Client) postTorrent(ctx context.Context, sid, reqURL string, body *bytes.Buffer, contentType string) (*http.Response, error) {
+func (c *Client) postTorrent(ctx context.Context, reqURL string, body *bytes.Buffer, contentType string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, body)
 	if err != nil {
 		return nil, fmt.Errorf("build torrent request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentType)
-	req.AddCookie(&http.Cookie{Name: "id", Value: sid})
-	return c.HTTP.Do(req)
+	req.AddCookie(&http.Cookie{Name: "id", Value: c.sid})
+	return c.http.Do(req)
 }
 
-func (c *Client) AddTorrent(ctx context.Context, sid, torrentPath, destination string) ([]string, error) {
+func (c *Client) AddTorrent(ctx context.Context, torrentPath, destination string) ([]string, error) {
 	dest := destination
 	if strings.TrimSpace(dest) == "" {
-		defDest, err := c.getDefaultDestination(ctx, sid)
+		defDest, err := c.getDefaultDestination(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("destination is required and default_destination could not be fetched: %w", err)
 		}
@@ -75,7 +75,7 @@ func (c *Client) AddTorrent(ctx context.Context, sid, torrentPath, destination s
 		}
 		dest = defDest
 	}
-	taskIDs, listIDs, err := c.addTorrentDS2Direct(ctx, sid, torrentPath, dest)
+	taskIDs, listIDs, err := c.addTorrentDS2Direct(ctx, torrentPath, dest)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (c *Client) AddTorrent(ctx context.Context, sid, torrentPath, destination s
 	return taskIDs, nil
 }
 
-func (c *Client) getDefaultDestination(ctx context.Context, sid string) (string, error) {
+func (c *Client) getDefaultDestination(ctx context.Context) (string, error) {
 	type infoResp struct {
 		Success bool `json:"success"`
 		Data    struct {
@@ -99,13 +99,13 @@ func (c *Client) getDefaultDestination(ctx context.Context, sid string) (string,
 	vals.Set("api", "SYNO.DownloadStation.Info")
 	vals.Set("version", "2")
 	vals.Set("method", "getconfig")
-	vals.Set("_sid", sid)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Endpoint+"/webapi/DownloadStation/info.cgi?"+vals.Encode(), nil)
+	vals.Set("_sid", c.sid)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+"/webapi/DownloadStation/info.cgi?"+vals.Encode(), nil)
 	if err != nil {
 		return "", err
 	}
-	req.AddCookie(&http.Cookie{Name: "id", Value: sid})
-	resp, err := c.HTTP.Do(req)
+	req.AddCookie(&http.Cookie{Name: "id", Value: c.sid})
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -124,14 +124,14 @@ func (c *Client) getDefaultDestination(ctx context.Context, sid string) (string,
 	return out.Data.DefaultDestination, nil
 }
 
-func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, destination string) ([]string, []string, error) {
+func (c *Client) addTorrentDS2Direct(ctx context.Context, torrentPath, destination string) ([]string, []string, error) {
 	f, size, err := openAndStatTorrent(torrentPath)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer func() { _ = f.Close() }()
 
-	apiName := c.apiName()
+	apiName := c.taskAPIName()
 	typeJSON, err := json.Marshal("file")
 	if err != nil {
 		return nil, nil, fmt.Errorf("encode type: %w", err)
@@ -143,7 +143,7 @@ func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, dest
 	fields := [][2]string{
 		{"api", apiName},
 		{"method", "create"},
-		{"version", strconv.Itoa(c.Version)},
+		{"version", strconv.Itoa(c.version)},
 		{"type", string(typeJSON)},
 		{"file", string(fileJSON)},
 		{"create_list", "false"},
@@ -161,8 +161,8 @@ func (c *Client) addTorrentDS2Direct(ctx context.Context, sid, torrentPath, dest
 		return nil, nil, err
 	}
 	q := url.Values{}
-	q.Set("_sid", sid)
-	resp, err := c.postTorrent(ctx, sid, c.Endpoint+c.Path+"/"+apiName+"?"+q.Encode(), body, contentType)
+	q.Set("_sid", c.sid)
+	resp, err := c.postTorrent(ctx, c.endpoint+c.path+"/"+apiName+"?"+q.Encode(), body, contentType)
 	if err != nil {
 		return nil, nil, err
 	}
