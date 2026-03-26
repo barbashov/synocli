@@ -31,6 +31,13 @@ func TestMapTaskIncludesStatusEnumFields(t *testing.T) {
 	}
 }
 
+func TestDSCommandAliases(t *testing.T) {
+	cmd := newDSCmd(&appContext{})
+	if len(cmd.Aliases) == 0 || cmd.Aliases[0] != "downloadstation" {
+		t.Fatalf("expected downloadstation alias, got %#v", cmd.Aliases)
+	}
+}
+
 func TestWaitRejectsNonPositiveInterval(t *testing.T) {
 	tests := []string{"0s", "-1s"}
 	for _, interval := range tests {

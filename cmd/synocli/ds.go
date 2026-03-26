@@ -17,7 +17,7 @@ import (
 )
 
 func newDSCmd(ac *appContext) *cobra.Command {
-	cmd := &cobra.Command{Use: "ds", Short: "Download Station commands"}
+	cmd := &cobra.Command{Use: "ds", Aliases: []string{"downloadstation"}, Short: "Download Station commands"}
 	cmd.AddCommand(
 		newDSAddCmd(ac),
 		newDSListCmd(ac),
