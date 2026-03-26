@@ -10,7 +10,7 @@ import (
 func TestFSCopyRequiresDestinationFlag(t *testing.T) {
 	ac := &appContext{}
 	cmd := newFSCopyCmd(ac, false)
-	cmd.SetArgs([]string{"https://example.com:5001", "/src/path"})
+	cmd.SetArgs([]string{"/src/path"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected error")
@@ -23,7 +23,7 @@ func TestFSCopyRequiresDestinationFlag(t *testing.T) {
 func TestFSSearchRequiresPattern(t *testing.T) {
 	ac := &appContext{}
 	cmd := newFSSearchCmd(ac)
-	cmd.SetArgs([]string{"https://example.com:5001", "/"})
+	cmd.SetArgs([]string{"/"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected error")

@@ -59,11 +59,11 @@ func newFSCmd(ac *appContext) *cobra.Command {
 
 func newFSInfoCmd(ac *appContext) *cobra.Command {
 	return &cobra.Command{
-		Use:   "info <endpoint>",
+		Use:   "info",
 		Short: "Get File Station info",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "info"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withFSSession(cmd, joinCommand("fs", "info"), func(ctx context.Context, s *session) (any, error) {
 				var out map[string]any
 				if err := s.fsClient.Call(ctx, filestation.APIInfo, "get", nil, &out); err != nil {
 					return nil, err
@@ -84,11 +84,11 @@ func newFSInfoCmd(ac *appContext) *cobra.Command {
 func newFSSharesCmd(ac *appContext) *cobra.Command {
 	var offset, limit int
 	return &cobra.Command{
-		Use:   "shares <endpoint>",
+		Use:   "shares",
 		Short: "List shared folders",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "shares"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withFSSession(cmd, joinCommand("fs", "shares"), func(ctx context.Context, s *session) (any, error) {
 				params := makeValues(
 					"offset", fmt.Sprintf("%d", offset),
 					"limit", fmt.Sprintf("%d", limit),
@@ -119,13 +119,13 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 	var recursive bool
 	var additional []string
 	cmd := &cobra.Command{
-		Use:     "list <endpoint> <folder-path>",
+		Use:     "list <folder-path>",
 		Aliases: []string{"ls"},
 		Short:   "List files in folder",
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "list"), func(ctx context.Context, s *session) (any, error) {
-				params := makeValues("folder_path", args[1])
+			return ac.withFSSession(cmd, joinCommand("fs", "list"), func(ctx context.Context, s *session) (any, error) {
+				params := makeValues("folder_path", args[0])
 				params.Set("offset", fmt.Sprintf("%d", offset))
 				params.Set("limit", fmt.Sprintf("%d", limit))
 				if sortBy != "" {
@@ -165,7 +165,7 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 						fsListMTimeDisplay(f),
 					})
 				}
-				printKVBlock(ac.out, "Folder", []kvField{{Label: "Path", Value: args[1]}, {Label: "Entries", Value: fmt.Sprintf("%d", len(files))}})
+				printKVBlock(ac.out, "Folder", []kvField{{Label: "Path", Value: args[0]}, {Label: "Entries", Value: fmt.Sprintf("%d", len(files))}})
 				printTable(ac.out, []string{"Name", "Path", "Size", "MTime"}, rows)
 				return nil, nil
 			})
@@ -185,12 +185,12 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 func newFSGetCmd(ac *appContext) *cobra.Command {
 	var additional []string
 	cmd := &cobra.Command{
-		Use:   "get <endpoint> <path> [<path>...]",
+		Use:   "get <path> [<path>...]",
 		Short: "Get file info",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "get"), func(ctx context.Context, s *session) (any, error) {
-				pathsJSON, err := filestation.EncodeJSON(args[1:])
+			return ac.withFSSession(cmd, joinCommand("fs", "get"), func(ctx context.Context, s *session) (any, error) {
+				pathsJSON, err := filestation.EncodeJSON(args)
 				if err != nil {
 					return nil, err
 				}
@@ -227,16 +227,16 @@ func newFSGetCmd(ac *appContext) *cobra.Command {
 func newFSMkdirCmd(ac *appContext) *cobra.Command {
 	var parents bool
 	cmd := &cobra.Command{
-		Use:   "mkdir <endpoint> <parent-path> <name> [<name>...]",
+		Use:   "mkdir <parent-path> <name> [<name>...]",
 		Short: "Create folder(s)",
-		Args:  cobra.MinimumNArgs(3),
+		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "mkdir"), func(ctx context.Context, s *session) (any, error) {
-				namesJSON, err := filestation.EncodeJSON(args[2:])
+			return ac.withFSSession(cmd, joinCommand("fs", "mkdir"), func(ctx context.Context, s *session) (any, error) {
+				namesJSON, err := filestation.EncodeJSON(args[1:])
 				if err != nil {
 					return nil, err
 				}
-				params := makeValues("folder_path", args[1], "name", namesJSON, "force_parent", fmt.Sprintf("%t", parents))
+				params := makeValues("folder_path", args[0], "name", namesJSON, "force_parent", fmt.Sprintf("%t", parents))
 				var out map[string]any
 				if err := s.fsClient.Call(ctx, filestation.APICreateFolder, "create", params, &out); err != nil {
 					return nil, err
@@ -244,7 +244,7 @@ func newFSMkdirCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return out, nil
 				}
-				printKVBlock(ac.out, "Create Folder", []kvField{{Label: "Parent", Value: args[1]}, {Label: "Names", Value: strings.Join(args[2:], ", ")}})
+				printKVBlock(ac.out, "Create Folder", []kvField{{Label: "Parent", Value: args[0]}, {Label: "Names", Value: strings.Join(args[1:], ", ")}})
 				return nil, nil
 			})
 		},
@@ -255,16 +255,16 @@ func newFSMkdirCmd(ac *appContext) *cobra.Command {
 
 func newFSRenameCmd(ac *appContext) *cobra.Command {
 	return &cobra.Command{
-		Use:   "rename <endpoint> <path> <new-name>",
+		Use:   "rename <path> <new-name>",
 		Short: "Rename file/folder",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "rename"), func(ctx context.Context, s *session) (any, error) {
-				pathsJSON, err := filestation.EncodeJSON([]string{args[1]})
+			return ac.withFSSession(cmd, joinCommand("fs", "rename"), func(ctx context.Context, s *session) (any, error) {
+				pathsJSON, err := filestation.EncodeJSON([]string{args[0]})
 				if err != nil {
 					return nil, err
 				}
-				namesJSON, err := filestation.EncodeJSON([]string{args[2]})
+				namesJSON, err := filestation.EncodeJSON([]string{args[1]})
 				if err != nil {
 					return nil, err
 				}
@@ -276,7 +276,7 @@ func newFSRenameCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return out, nil
 				}
-				printKVBlock(ac.out, "Rename", []kvField{{Label: "Path", Value: args[1]}, {Label: "New Name", Value: args[2]}})
+				printKVBlock(ac.out, "Rename", []kvField{{Label: "Path", Value: args[0]}, {Label: "New Name", Value: args[1]}})
 				return nil, nil
 			})
 		},
@@ -297,9 +297,9 @@ func newFSCopyCmd(ac *appContext, move bool) *cobra.Command {
 	var interval time.Duration
 	var maxWait time.Duration
 	cmd := &cobra.Command{
-		Use:   fmt.Sprintf("%s <endpoint> <path> [<path>...] --to <destination>", verb),
+		Use:   fmt.Sprintf("%s <path> [<path>...] --to <destination>", verb),
 		Short: capitalizeWord(verb) + " files/folders",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dest == "" {
 				return apperr.New("validation_error", "--to is required", 1)
@@ -310,11 +310,11 @@ func newFSCopyCmd(ac *appContext, move bool) *cobra.Command {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", verb), func(ctx context.Context, s *session) (any, error) {
+			return ac.withFSSession(cmd, joinCommand("fs", verb), func(ctx context.Context, s *session) (any, error) {
 				if err := ensureRemoteDir(ctx, s.fsClient, dest); err != nil {
 					return nil, err
 				}
-				pathsJSON, err := filestation.EncodeJSON(args[1:])
+				pathsJSON, err := filestation.EncodeJSON(args)
 				if err != nil {
 					return nil, err
 				}
@@ -370,18 +370,18 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 	var interval time.Duration
 	var maxWait time.Duration
 	cmd := &cobra.Command{
-		Use:   "delete <endpoint> <path> [<path>...]",
+		Use:   "delete <path> [<path>...]",
 		Short: "Delete files/folders",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "delete"), func(ctx context.Context, s *session) (any, error) {
-				if err := ensureDeleteSafety(ctx, s.fsClient, args[1:], recursive); err != nil {
+			return ac.withFSSession(cmd, joinCommand("fs", "delete"), func(ctx context.Context, s *session) (any, error) {
+				if err := ensureDeleteSafety(ctx, s.fsClient, args, recursive); err != nil {
 					return nil, err
 				}
-				pathsJSON, err := filestation.EncodeJSON(args[1:])
+				pathsJSON, err := filestation.EncodeJSON(args)
 				if err != nil {
 					return nil, err
 				}
@@ -395,7 +395,7 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 					if ac.opts.JSON {
 						return out, nil
 					}
-					printKVBlock(ac.out, "Delete", []kvField{{Label: "Paths", Value: strings.Join(args[1:], ", ")}})
+					printKVBlock(ac.out, "Delete", []kvField{{Label: "Paths", Value: strings.Join(args, ", ")}})
 					return nil, nil
 				}
 				params := makeValues("path", pathsJSON, "recursive", fmt.Sprintf("%t", recursive))
@@ -436,37 +436,37 @@ func newFSUploadCmd(ac *appContext) *cobra.Command {
 	var overwrite bool
 	var skipExisting bool
 	cmd := &cobra.Command{
-		Use:   "upload <endpoint> <local-path> <remote-path>",
+		Use:   "upload <local-path> <remote-path>",
 		Short: "Upload file or directory",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if overwrite && skipExisting {
 				return apperr.New("validation_error", "use only one of --overwrite or --skip-existing", 1)
 			}
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "upload"), func(ctx context.Context, s *session) (any, error) {
-				st, err := os.Stat(args[1])
+			return ac.withFSSession(cmd, joinCommand("fs", "upload"), func(ctx context.Context, s *session) (any, error) {
+				st, err := os.Stat(args[0])
 				if err != nil {
 					return nil, fmt.Errorf("stat local path: %w", err)
 				}
 				if st.IsDir() {
-					res, err := uploadRecursiveCP(ctx, s.fsClient, args[1], args[2], parents, overwrite, skipExisting)
+					res, err := uploadRecursiveCP(ctx, s.fsClient, args[0], args[1], parents, overwrite, skipExisting)
 					if err != nil {
 						return nil, err
 					}
 					if ac.opts.JSON {
 						return res, nil
 					}
-					printKVBlock(ac.out, "Upload Directory", []kvField{{Label: "Local", Value: args[1]}, {Label: "Remote", Value: args[2]}, {Label: "Files", Value: fmt.Sprintf("%v", res["uploaded_files"])}})
+					printKVBlock(ac.out, "Upload Directory", []kvField{{Label: "Local", Value: args[0]}, {Label: "Remote", Value: args[1]}, {Label: "Files", Value: fmt.Sprintf("%v", res["uploaded_files"])}})
 					return nil, nil
 				}
-				res, err := uploadOne(ctx, s.fsClient, args[1], args[2], parents, overwrite, skipExisting)
+				res, err := uploadOne(ctx, s.fsClient, args[0], args[1], parents, overwrite, skipExisting)
 				if err != nil {
 					return nil, err
 				}
 				if ac.opts.JSON {
 					return res, nil
 				}
-				printKVBlock(ac.out, "Upload", []kvField{{Label: "Local", Value: args[1]}, {Label: "Remote", Value: args[2]}})
+				printKVBlock(ac.out, "Upload", []kvField{{Label: "Local", Value: args[0]}, {Label: "Remote", Value: args[1]}})
 				return nil, nil
 			})
 		},
@@ -481,15 +481,15 @@ func newFSDownloadCmd(ac *appContext) *cobra.Command {
 	var outputPath string
 	var mode string
 	cmd := &cobra.Command{
-		Use:   "download <endpoint> <remote-path> [<remote-path>...]",
+		Use:   "download <remote-path> [<remote-path>...]",
 		Short: "Download file or folder archive",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if outputPath == "" {
 				return apperr.New("validation_error", "--output is required", 1)
 			}
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "download"), func(ctx context.Context, s *session) (any, error) {
-				pathsJSON, err := filestation.EncodeJSON(args[1:])
+			return ac.withFSSession(cmd, joinCommand("fs", "download"), func(ctx context.Context, s *session) (any, error) {
+				pathsJSON, err := filestation.EncodeJSON(args)
 				if err != nil {
 					return nil, err
 				}
@@ -514,7 +514,7 @@ func newFSDownloadCmd(ac *appContext) *cobra.Command {
 				if err != nil {
 					return nil, fmt.Errorf("write output file: %w", err)
 				}
-				data := map[string]any{"output": outputPath, "bytes": n, "paths": args[1:]}
+				data := map[string]any{"output": outputPath, "bytes": n, "paths": args}
 				if ac.opts.JSON {
 					return data, nil
 				}
@@ -536,9 +536,9 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 	var interval time.Duration
 	var maxWait time.Duration
 	cmd := &cobra.Command{
-		Use:   "search <endpoint> <folder-path>",
+		Use:   "search <folder-path>",
 		Short: "Search files",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if pattern == "" {
 				return apperr.New("validation_error", "--pattern is required", 1)
@@ -546,8 +546,8 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "search"), func(ctx context.Context, s *session) (any, error) {
-				params := makeValues("folder_path", args[1], "pattern", pattern, "recursive", fmt.Sprintf("%t", recursive))
+			return ac.withFSSession(cmd, joinCommand("fs", "search"), func(ctx context.Context, s *session) (any, error) {
+				params := makeValues("folder_path", args[0], "pattern", pattern, "recursive", fmt.Sprintf("%t", recursive))
 				if filetype != "" {
 					params.Set("filetype", filetype)
 				}
@@ -587,12 +587,12 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 func newFSSearchResultsCmd(ac *appContext) *cobra.Command {
 	var offset, limit int
 	return &cobra.Command{
-		Use:   "search-results <endpoint> <task-id>",
+		Use:   "search-results <task-id>",
 		Short: "Get search results",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "search-results"), func(ctx context.Context, s *session) (any, error) {
-				params := makeValues("taskid", args[1], "offset", fmt.Sprintf("%d", offset), "limit", fmt.Sprintf("%d", limit))
+			return ac.withFSSession(cmd, joinCommand("fs", "search-results"), func(ctx context.Context, s *session) (any, error) {
+				params := makeValues("taskid", args[0], "offset", fmt.Sprintf("%d", offset), "limit", fmt.Sprintf("%d", limit))
 				var out map[string]any
 				if err := s.fsClient.Call(ctx, filestation.APISearch, "list", params, &out); err != nil {
 					return nil, err
@@ -614,18 +614,18 @@ func newFSSearchResultsCmd(ac *appContext) *cobra.Command {
 
 func newFSSearchStopCmd(ac *appContext) *cobra.Command {
 	return &cobra.Command{
-		Use:   "search-stop <endpoint> <task-id>",
+		Use:   "search-stop <task-id>",
 		Short: "Stop search task",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "search-stop"), func(ctx context.Context, s *session) (any, error) {
-				if err := s.fsClient.Call(ctx, filestation.APISearch, "stop", makeValues("taskid", args[1]), nil); err != nil {
+			return ac.withFSSession(cmd, joinCommand("fs", "search-stop"), func(ctx context.Context, s *session) (any, error) {
+				if err := s.fsClient.Call(ctx, filestation.APISearch, "stop", makeValues("taskid", args[0]), nil); err != nil {
 					return nil, err
 				}
 				if ac.opts.JSON {
-					return map[string]any{"task_id": args[1], "stopped": true}, nil
+					return map[string]any{"task_id": args[0], "stopped": true}, nil
 				}
-				printKVBlock(ac.out, "Search Stop", []kvField{{Label: "Task ID", Value: args[1]}})
+				printKVBlock(ac.out, "Search Stop", []kvField{{Label: "Task ID", Value: args[0]}})
 				return nil, nil
 			})
 		},
@@ -634,11 +634,11 @@ func newFSSearchStopCmd(ac *appContext) *cobra.Command {
 
 func newFSSearchClearCmd(ac *appContext) *cobra.Command {
 	return &cobra.Command{
-		Use:   "search-clear <endpoint>",
+		Use:   "search-clear",
 		Short: "Clear search tasks",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "search-clear"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withFSSession(cmd, joinCommand("fs", "search-clear"), func(ctx context.Context, s *session) (any, error) {
 				if err := s.fsClient.Call(ctx, filestation.APISearch, "clean", nil, nil); err != nil {
 					return nil, err
 				}
@@ -657,14 +657,14 @@ func newTaskStartCmd(ac *appContext, apiKey, cmdName, title, method string, para
 	var interval time.Duration
 	var maxWait time.Duration
 	cmd := &cobra.Command{
-		Use:   fmt.Sprintf("%s <endpoint> <path>", cmdName),
+		Use:   fmt.Sprintf("%s <path>", cmdName),
 		Short: title,
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", cmdName), func(ctx context.Context, s *session) (any, error) {
+			return ac.withFSSession(cmd, joinCommand("fs", cmdName), func(ctx context.Context, s *session) (any, error) {
 				pairs, err := paramsFn(args)
 				if err != nil {
 					return nil, err
@@ -702,19 +702,19 @@ func newTaskStartCmd(ac *appContext, apiKey, cmdName, title, method string, para
 
 func newTaskStatusCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Command {
 	return &cobra.Command{
-		Use:   fmt.Sprintf("%s <endpoint> <task-id>", cmdName),
+		Use:   fmt.Sprintf("%s <task-id>", cmdName),
 		Short: title,
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", cmdName), func(ctx context.Context, s *session) (any, error) {
+			return ac.withFSSession(cmd, joinCommand("fs", cmdName), func(ctx context.Context, s *session) (any, error) {
 				var out map[string]any
-				if err := s.fsClient.Call(ctx, apiKey, "status", makeValues("taskid", args[1]), &out); err != nil {
+				if err := s.fsClient.Call(ctx, apiKey, "status", makeValues("taskid", args[0]), &out); err != nil {
 					return nil, err
 				}
 				if ac.opts.JSON {
 					return out, nil
 				}
-				printKVBlock(ac.out, title, []kvField{{Label: "Task ID", Value: args[1]}, {Label: "Finished", Value: valueFromMap(out, "finished")}})
+				printKVBlock(ac.out, title, []kvField{{Label: "Task ID", Value: args[0]}, {Label: "Finished", Value: valueFromMap(out, "finished")}})
 				return nil, nil
 			})
 		},
@@ -723,18 +723,18 @@ func newTaskStatusCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Comm
 
 func newTaskStopCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Command {
 	return &cobra.Command{
-		Use:   fmt.Sprintf("%s <endpoint> <task-id>", cmdName),
+		Use:   fmt.Sprintf("%s <task-id>", cmdName),
 		Short: title,
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", cmdName), func(ctx context.Context, s *session) (any, error) {
-				if err := s.fsClient.Call(ctx, apiKey, "stop", makeValues("taskid", args[1]), nil); err != nil {
+			return ac.withFSSession(cmd, joinCommand("fs", cmdName), func(ctx context.Context, s *session) (any, error) {
+				if err := s.fsClient.Call(ctx, apiKey, "stop", makeValues("taskid", args[0]), nil); err != nil {
 					return nil, err
 				}
 				if ac.opts.JSON {
-					return map[string]any{"task_id": args[1], "stopped": true}, nil
+					return map[string]any{"task_id": args[0], "stopped": true}, nil
 				}
-				printKVBlock(ac.out, title, []kvField{{Label: "Task ID", Value: args[1]}})
+				printKVBlock(ac.out, title, []kvField{{Label: "Task ID", Value: args[0]}})
 				return nil, nil
 			})
 		},
@@ -743,7 +743,7 @@ func newTaskStopCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Comman
 
 func newFSDirSizeCmd(ac *appContext) *cobra.Command {
 	return newTaskStartCmd(ac, filestation.APIDirSize, "dir-size", "Dir Size", "start", func(args []string) (map[string]string, error) {
-		j, err := filestation.EncodeJSON(args[1:])
+		j, err := filestation.EncodeJSON(args)
 		if err != nil {
 			return nil, err
 		}
@@ -761,7 +761,7 @@ func newFSDirSizeStopCmd(ac *appContext) *cobra.Command {
 
 func newFSMD5Cmd(ac *appContext) *cobra.Command {
 	return newTaskStartCmd(ac, filestation.APIMD5, "md5", "MD5", "start", func(args []string) (map[string]string, error) {
-		return map[string]string{"file_path": args[1]}, nil
+		return map[string]string{"file_path": args[0]}, nil
 	})
 }
 
@@ -784,7 +784,7 @@ func newFSExtractCmd(ac *appContext) *cobra.Command {
 			return nil, apperr.New("validation_error", "--to is required", 1)
 		}
 		return map[string]string{
-			"file_path":        args[1],
+			"file_path":        args[0],
 			"dest_folder_path": dest,
 			"overwrite":        fmt.Sprintf("%t", overwrite),
 			"keep_dir":         fmt.Sprintf("%t", keepDir),
@@ -818,7 +818,7 @@ func newFSCompressCmd(ac *appContext) *cobra.Command {
 		if dest == "" {
 			return nil, apperr.New("validation_error", "--to is required", 1)
 		}
-		j, err := filestation.EncodeJSON(args[1:])
+		j, err := filestation.EncodeJSON(args)
 		if err != nil {
 			return nil, err
 		}
@@ -851,11 +851,11 @@ func newFSTasksCmd(ac *appContext) *cobra.Command {
 	var offset, limit int
 	var sortBy, sortDirection string
 	cmd := &cobra.Command{
-		Use:   "tasks <endpoint>",
+		Use:   "tasks",
 		Short: "List File Station background tasks",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "tasks"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withFSSession(cmd, joinCommand("fs", "tasks"), func(ctx context.Context, s *session) (any, error) {
 				params := makeValues("offset", fmt.Sprintf("%d", offset), "limit", fmt.Sprintf("%d", limit))
 				if sortBy != "" {
 					params.Set("sort_by", sortBy)
@@ -885,11 +885,11 @@ func newFSTasksCmd(ac *appContext) *cobra.Command {
 func newFSTasksClearCmd(ac *appContext) *cobra.Command {
 	var ids []string
 	cmd := &cobra.Command{
-		Use:   "tasks-clear <endpoint>",
+		Use:   "tasks-clear",
 		Short: "Clear finished background tasks",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withFSSession(cmd, args[0], joinCommand("fs", "tasks-clear"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withFSSession(cmd, joinCommand("fs", "tasks-clear"), func(ctx context.Context, s *session) (any, error) {
 				params := makeValues()
 				if len(ids) > 0 {
 					j, err := filestation.EncodeJSON(ids)
@@ -923,14 +923,14 @@ func newFSWatchTasksCmd(ac *appContext) *cobra.Command {
 	var interval time.Duration
 	var limit int
 	cmd := &cobra.Command{
-		Use:   "tasks <endpoint>",
+		Use:   "tasks",
 		Short: "Watch background tasks",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
-			return ac.withStreamingFSSession(cmd, args[0], joinCommand("fs", "watch", "tasks"), func(ctx context.Context, s *session) error {
+			return ac.withStreamingFSSession(cmd, joinCommand("fs", "watch", "tasks"), func(ctx context.Context, s *session) error {
 				ui := newHumanUI(ac.out)
 				for {
 					var out map[string]any
@@ -970,17 +970,17 @@ func newFSWatchFolderCmd(ac *appContext) *cobra.Command {
 	var recursive bool
 	var additional []string
 	cmd := &cobra.Command{
-		Use:   "folder <endpoint> <folder-path>",
+		Use:   "folder <folder-path>",
 		Short: "Watch folder listing",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
-			return ac.withStreamingFSSession(cmd, args[0], joinCommand("fs", "watch", "folder"), func(ctx context.Context, s *session) error {
+			return ac.withStreamingFSSession(cmd, joinCommand("fs", "watch", "folder"), func(ctx context.Context, s *session) error {
 				ui := newHumanUI(ac.out)
 				for {
-					params := makeValues("folder_path", args[1], "offset", "0", "limit", "1000", "recursive", fmt.Sprintf("%t", recursive))
+					params := makeValues("folder_path", args[0], "offset", "0", "limit", "1000", "recursive", fmt.Sprintf("%t", recursive))
 					if len(additional) > 0 {
 						j, err := filestation.EncodeJSON(additional)
 						if err != nil {
@@ -995,7 +995,7 @@ func newFSWatchFolderCmd(ac *appContext) *cobra.Command {
 					if ac.opts.JSON {
 						env := output.NewEnvelope(true, joinCommand("fs", "watch", "folder"), s.endpoint, s.start)
 						env.Meta.APIVersion = s.apiVersions
-						env.Data = map[string]any{"event": "snapshot", "mode": "folder", "path": args[1], "snapshot": out}
+						env.Data = map[string]any{"event": "snapshot", "mode": "folder", "path": args[0], "snapshot": out}
 						if err := output.WriteJSONLine(ac.out, env); err != nil {
 							return err
 						}
@@ -1003,7 +1003,7 @@ func newFSWatchFolderCmd(ac *appContext) *cobra.Command {
 						if ui.tty {
 							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
 						}
-						printKVBlock(ac.out, "File Station Folder Watch", []kvField{{Label: "Timestamp", Value: time.Now().Format(time.RFC3339)}, {Label: "Path", Value: args[1]}})
+						printKVBlock(ac.out, "File Station Folder Watch", []kvField{{Label: "Timestamp", Value: time.Now().Format(time.RFC3339)}, {Label: "Path", Value: args[0]}})
 						files := mapSliceAny(out["files"])
 						rows := make([][]string, 0, len(files))
 						for _, f := range files {

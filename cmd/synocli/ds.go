@@ -34,12 +34,11 @@ func newDSCmd(ac *appContext) *cobra.Command {
 func newDSAddCmd(ac *appContext) *cobra.Command {
 	var destination string
 	cmd := &cobra.Command{
-		Use:   "add <endpoint> <input>",
+		Use:   "add <input>",
 		Short: "Add download from URL, magnet, or torrent file",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := args[0]
-			input := strings.TrimSpace(args[1])
+			input := strings.TrimSpace(args[0])
 			kind, err := detectAddInputKind(input)
 			if err != nil {
 				return apperr.Wrap("validation_error", "invalid add input", 1, err)
@@ -49,7 +48,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					return apperr.Wrap("validation_error", "invalid torrent file", 1, err)
 				}
 			}
-			return ac.withSession(cmd, endpoint, joinCommand("ds", "add"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("ds", "add"), func(ctx context.Context, s *session) (any, error) {
 				var taskIDs []string
 				switch kind {
 				case addInputTorrent:
@@ -129,11 +128,11 @@ func detectAddInputKind(input string) (addInputType, error) {
 
 func newDSListCmd(ac *appContext) *cobra.Command {
 	return &cobra.Command{
-		Use:   "list <endpoint>",
+		Use:   "list",
 		Short: "List downloads",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withSession(cmd, args[0], joinCommand("ds", "list"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("ds", "list"), func(ctx context.Context, s *session) (any, error) {
 				tasks, err := s.dsClient.List(ctx)
 				if err != nil {
 					return nil, err
@@ -152,13 +151,12 @@ func newDSListCmd(ac *appContext) *cobra.Command {
 
 func newDSGetCmd(ac *appContext) *cobra.Command {
 	return &cobra.Command{
-		Use:   "get <endpoint> <task-id>",
+		Use:   "get <task-id>",
 		Short: "Get detailed task info",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := args[0]
-			id := args[1]
-			return ac.withSession(cmd, endpoint, joinCommand("ds", "get"), func(ctx context.Context, s *session) (any, error) {
+			id := args[0]
+			return ac.withSession(cmd, joinCommand("ds", "get"), func(ctx context.Context, s *session) (any, error) {
 				t, err := s.dsClient.Get(ctx, id)
 				if err != nil {
 					return nil, err
@@ -189,13 +187,12 @@ func newDSResumeCmd(ac *appContext) *cobra.Command {
 func newDSDeleteCmd(ac *appContext) *cobra.Command {
 	var withData bool
 	cmd := &cobra.Command{
-		Use:   "delete <endpoint> <task-id> [<task-id>...]",
+		Use:   "delete <task-id> [<task-id>...]",
 		Short: "Delete tasks",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := args[0]
-			ids := args[1:]
-			return ac.withSession(cmd, endpoint, joinCommand("ds", "delete"), func(ctx context.Context, s *session) (any, error) {
+			ids := args
+			return ac.withSession(cmd, joinCommand("ds", "delete"), func(ctx context.Context, s *session) (any, error) {
 				if err := s.dsClient.Delete(ctx, ids, withData); err != nil {
 					return nil, err
 				}
@@ -217,13 +214,12 @@ func newDSDeleteCmd(ac *appContext) *cobra.Command {
 
 func actionWithIDs(ac *appContext, action string, run func(context.Context, *session, []string) error) *cobra.Command {
 	return &cobra.Command{
-		Use:   fmt.Sprintf("%s <endpoint> <task-id> [<task-id>...]", action),
+		Use:   fmt.Sprintf("%s <task-id> [<task-id>...]", action),
 		Short: strings.ToUpper(action[:1]) + action[1:] + " tasks",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := args[0]
-			ids := args[1:]
-			return ac.withSession(cmd, endpoint, joinCommand("ds", action), func(ctx context.Context, s *session) (any, error) {
+			ids := args
+			return ac.withSession(cmd, joinCommand("ds", action), func(ctx context.Context, s *session) (any, error) {
 				if err := run(ctx, s, ids); err != nil {
 					return nil, err
 				}
@@ -244,15 +240,15 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 	var interval time.Duration
 	var maxWait time.Duration
 	cmd := &cobra.Command{
-		Use:   "wait <endpoint> <task-id>",
+		Use:   "wait <task-id>",
 		Short: "Wait for a task to finish or fail",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
-			endpoint, id := args[0], args[1]
-			return ac.withSession(cmd, endpoint, joinCommand("ds", "wait"), func(ctx context.Context, s *session) (any, error) {
+			id := args[0]
+			return ac.withSession(cmd, joinCommand("ds", "wait"), func(ctx context.Context, s *session) (any, error) {
 				deadline := time.Time{}
 				if maxWait > 0 {
 					deadline = time.Now().Add(maxWait)
@@ -301,15 +297,14 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 	var ids []string
 	var statuses []string
 	cmd := &cobra.Command{
-		Use:   "watch <endpoint>",
+		Use:   "watch",
 		Short: "Watch task state",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
-			endpoint := args[0]
-			return ac.withStreamingSession(cmd, endpoint, joinCommand("ds", "watch"), func(ctx context.Context, s *session) error {
+			return ac.withStreamingSession(cmd, joinCommand("ds", "watch"), func(ctx context.Context, s *session) error {
 				ui := newHumanUI(ac.out)
 				inPlace := ui.tty
 				statusSet := make(map[string]struct{}, len(statuses))

@@ -54,6 +54,8 @@ var taskAPIRe = regexp.MustCompile(`^SYNO\.DownloadStation(\d*)\.Task$`)
 
 func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	ac := &appContext{stdin: stdin, out: stdout, err: stderr}
+	defaultConfigPath, _ := config.DefaultConfigPath()
+	ac.opts.ConfigPath = defaultConfigPath
 	cmd := &cobra.Command{
 		Use:           "synocli",
 		Short:         "Synology DSM CLI",
@@ -61,6 +63,8 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		SilenceErrors: true,
 	}
 	f := cmd.PersistentFlags()
+	f.StringVar(&ac.opts.Endpoint, "endpoint", "", "Synology DSM endpoint (https://host:5001)")
+	f.StringVar(&ac.opts.ConfigPath, "config", ac.opts.ConfigPath, "Path to per-user synocli config file")
 	f.StringVar(&ac.opts.User, "user", "", "Synology username")
 	f.StringVar(&ac.opts.Password, "password", "", "Synology password")
 	f.BoolVar(&ac.opts.PasswordStdin, "password-stdin", false, "Read password from stdin")
@@ -70,26 +74,26 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&ac.opts.JSON, "json", false, "JSON output")
 	f.BoolVar(&ac.opts.Debug, "debug", false, "Debug request flow")
 
-	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac))
+	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac), newCLIConfigCmd(ac))
 	return cmd
 }
 
 // withSession creates an authenticated session with Download Station client and handles output.
-func (a *appContext) withSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) (any, error)) error {
-	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{
+func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
+	return a.doSession(cmd, commandName, moduleOptions{
 		authSession: "DownloadStation",
 		needsDS:     true,
 	}, fn)
 }
 
 // withAuthSession creates an authenticated session without Download Station client setup.
-func (a *appContext) withAuthSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) (any, error)) error {
-	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{authSession: "DownloadStation"}, fn)
+func (a *appContext) withAuthSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
+	return a.doSession(cmd, commandName, moduleOptions{authSession: "DownloadStation"}, fn)
 }
 
 // withStreamingSession creates a session for streaming commands that handle their own output.
-func (a *appContext) withStreamingSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) error) error {
-	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{
+func (a *appContext) withStreamingSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) error) error {
+	return a.doSession(cmd, commandName, moduleOptions{
 		authSession: "DownloadStation",
 		needsDS:     true,
 	}, func(ctx context.Context, s *session) (any, error) {
@@ -97,15 +101,15 @@ func (a *appContext) withStreamingSession(cmd *cobra.Command, endpointRaw, comma
 	})
 }
 
-func (a *appContext) withFSSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) (any, error)) error {
-	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{
+func (a *appContext) withFSSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
+	return a.doSession(cmd, commandName, moduleOptions{
 		authSession: "FileStation",
 		needsFS:     true,
 	}, fn)
 }
 
-func (a *appContext) withStreamingFSSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) error) error {
-	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{
+func (a *appContext) withStreamingFSSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) error) error {
+	return a.doSession(cmd, commandName, moduleOptions{
 		authSession: "FileStation",
 		needsFS:     true,
 	}, func(ctx context.Context, s *session) (any, error) {
@@ -119,20 +123,25 @@ type moduleOptions struct {
 	needsFS     bool
 }
 
-func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName string, opts moduleOptions, fn func(context.Context, *session) (any, error)) error {
+func (a *appContext) doSession(cmd *cobra.Command, commandName string, opts moduleOptions, fn func(context.Context, *session) (any, error)) error {
 	start := time.Now()
-	u, err := config.ValidateEndpoint(endpointRaw)
+	runOpts, err := a.resolveRuntimeOptions(cmd)
 	if err != nil {
-		return a.outputError(commandName, endpointRaw, start, apperr.Wrap("validation_error", "invalid endpoint", 1, err))
+		return a.outputError(commandName, "", start, apperr.Wrap("validation_error", "invalid runtime options", 1, err))
 	}
-	if err := a.validateAuthOptions(); err != nil {
+	if runOpts.Endpoint == "" {
+		return a.outputError(commandName, "", start, apperr.New("validation_error", "endpoint is required via --endpoint or config file", 1))
+	}
+	u, err := config.ValidateEndpoint(runOpts.Endpoint)
+	if err != nil {
+		return a.outputError(commandName, runOpts.Endpoint, start, apperr.Wrap("validation_error", "invalid endpoint", 1, err))
+	}
+	if err := runOpts.ResolvePassword(a.stdin); err != nil {
 		return a.outputError(commandName, u.String(), start, apperr.Wrap("validation_error", "invalid auth options", 1, err))
 	}
-	if err := a.opts.ResolvePassword(a.stdin); err != nil {
-		return a.outputError(commandName, u.String(), start, apperr.Wrap("validation_error", "invalid auth options", 1, err))
-	}
+	a.opts = runOpts
 
-	hc, err := httpclient.New(httpclient.Options{InsecureTLS: a.opts.InsecureTLS, Timeout: a.opts.Timeout, Debug: a.opts.Debug, DebugOut: a.err})
+	hc, err := httpclient.New(httpclient.Options{InsecureTLS: runOpts.InsecureTLS, Timeout: runOpts.Timeout, Debug: runOpts.Debug, DebugOut: a.err})
 	if err != nil {
 		return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize http client", 1, err))
 	}
@@ -153,7 +162,7 @@ func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName stri
 	if opts.needsDS {
 		dsAPIName, dsPath, dsVersion = selectDownloadStationAPIs(entries)
 		dsVersion = clampVersion(dsVersion, 3)
-		if a.opts.Debug {
+		if runOpts.Debug {
 			_, _ = fmt.Fprintf(a.err, "[debug] selected task api=%s path=%s version=%d\n", dsAPIName, dsPath, dsVersion)
 		}
 		apiVersions["task"] = dsVersion
@@ -170,7 +179,7 @@ func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName stri
 	if strings.TrimSpace(opts.authSession) == "" {
 		opts.authSession = "DownloadStation"
 	}
-	sid, err := authClient.Login(ctx, a.opts.User, a.opts.Password, opts.authSession)
+	sid, err := authClient.Login(ctx, runOpts.User, runOpts.Password, opts.authSession)
 	if err != nil {
 		return a.outputError(commandName, u.String(), start, apperr.Wrap("auth_failed", "authentication failed", 2, err))
 	}
@@ -278,17 +287,49 @@ func joinCommand(name ...string) string {
 	return strings.Join(name, " ")
 }
 
-func (a *appContext) validateAuthOptions() error {
-	if a.opts.CredentialsFile != "" {
-		if a.opts.User != "" || a.opts.Password != "" || a.opts.PasswordStdin {
-			return errors.New("use --credentials-file without --user, --password, or --password-stdin")
+func (a *appContext) resolveRuntimeOptions(cmd *cobra.Command) (config.GlobalOptions, error) {
+	out := a.opts
+	configPath := strings.TrimSpace(out.ConfigPath)
+	if configPath == "" {
+		var err error
+		configPath, err = config.DefaultConfigPath()
+		if err != nil {
+			return config.GlobalOptions{}, err
 		}
-		return nil
 	}
-	if a.opts.Password != "" && a.opts.PasswordStdin {
-		return errors.New("use only one of --password or --password-stdin")
+	out.ConfigPath = configPath
+	fileCfg, err := config.LoadConfigFile(configPath, cmd.Flags().Lookup("config").Changed)
+	if err != nil {
+		return config.GlobalOptions{}, err
 	}
-	return nil
+
+	if !cmd.Flags().Lookup("endpoint").Changed && strings.TrimSpace(fileCfg.Endpoint) != "" {
+		out.Endpoint = fileCfg.Endpoint
+	}
+	if !cmd.Flags().Lookup("user").Changed && strings.TrimSpace(fileCfg.User) != "" {
+		out.User = fileCfg.User
+	}
+	if !cmd.Flags().Lookup("password").Changed && strings.TrimSpace(fileCfg.Password) != "" {
+		out.Password = fileCfg.Password
+	}
+	if !cmd.Flags().Lookup("insecure-tls").Changed {
+		out.InsecureTLS = fileCfg.InsecureTLS
+	}
+	if !cmd.Flags().Lookup("timeout").Changed && fileCfg.Timeout > 0 {
+		out.Timeout = fileCfg.Timeout
+	}
+
+	if out.CredentialsFile != "" {
+		if cmd.Flags().Lookup("user").Changed || cmd.Flags().Lookup("password").Changed || out.PasswordStdin {
+			return config.GlobalOptions{}, errors.New("use --credentials-file without --user, --password, or --password-stdin")
+		}
+		out.User = ""
+		out.Password = ""
+	}
+	if out.Password != "" && out.PasswordStdin {
+		return config.GlobalOptions{}, errors.New("use only one of --password or --password-stdin")
+	}
+	return out, nil
 }
 
 func clampVersion(version, maxSupported int) int {

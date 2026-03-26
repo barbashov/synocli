@@ -37,7 +37,7 @@ func TestWaitRejectsNonPositiveInterval(t *testing.T) {
 		t.Run(interval, func(t *testing.T) {
 			ac := &appContext{}
 			cmd := newDSWaitCmd(ac)
-			cmd.SetArgs([]string{"https://example.com:5001", "dbid_1", "--interval", interval})
+			cmd.SetArgs([]string{"dbid_1", "--interval", interval})
 			err := cmd.Execute()
 			if err == nil {
 				t.Fatal("expected error")
@@ -55,7 +55,7 @@ func TestWatchRejectsNonPositiveInterval(t *testing.T) {
 		t.Run(interval, func(t *testing.T) {
 			ac := &appContext{}
 			cmd := newDSWatchCmd(ac)
-			cmd.SetArgs([]string{"https://example.com:5001", "--interval", interval})
+			cmd.SetArgs([]string{"--interval", interval})
 			err := cmd.Execute()
 			if err == nil {
 				t.Fatal("expected error")
@@ -122,7 +122,7 @@ func TestDSAddLegacySubcommandRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "accepts 2 arg(s), received 3") {
+	if !strings.Contains(err.Error(), "accepts 1 arg(s), received 3") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

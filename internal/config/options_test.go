@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateEndpoint(t *testing.T) {
@@ -67,5 +68,41 @@ func TestResolvePasswordCredentialsFileWithFlagsConflict(t *testing.T) {
 	opts := GlobalOptions{CredentialsFile: "/tmp/creds.env", User: "admin"}
 	if err := opts.ResolvePassword(strings.NewReader("")); err == nil {
 		t.Fatal("expected conflict error")
+	}
+}
+
+func TestParseFileOptions(t *testing.T) {
+	got, err := ParseFileOptions(strings.Join([]string{
+		"endpoint=https://example.com:5001",
+		"user=admin",
+		"password=secret",
+		"insecure_tls=true",
+		"timeout=45s",
+	}, "\n"))
+	if err != nil {
+		t.Fatalf("ParseFileOptions: %v", err)
+	}
+	if got.Endpoint != "https://example.com:5001" {
+		t.Fatalf("endpoint=%q", got.Endpoint)
+	}
+	if got.User != "admin" || got.Password != "secret" {
+		t.Fatalf("unexpected credentials: user=%q password=%q", got.User, got.Password)
+	}
+	if !got.InsecureTLS {
+		t.Fatal("expected insecure_tls=true")
+	}
+	if got.Timeout != 45*time.Second {
+		t.Fatalf("timeout=%s", got.Timeout)
+	}
+}
+
+func TestLoadConfigFilePermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := filepath.Join(tmpDir, "config")
+	if err := os.WriteFile(p, []byte("endpoint=https://example.com:5001\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if _, err := LoadConfigFile(p, true); err == nil {
+		t.Fatal("expected permission error")
 	}
 }

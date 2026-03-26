@@ -17,25 +17,24 @@ Binary path:
 
 ## Authentication Modes
 
-Every command requires an endpoint positional argument:
+Endpoint is resolved from:
+
+1. `--endpoint`
+2. `~/.synocli/config` (`endpoint=...`)
+
+Credentials are resolved from either:
+
+- `--credentials-file <path>` (exclusive mode), or
+- `--user` + (`--password` or `--password-stdin`), with optional defaults from `~/.synocli/config`.
+
+Use `cli-config` helpers:
 
 ```bash
-synocli <group> <command> <endpoint> [args]
+synocli cli-config init --endpoint https://192.168.0.1:5001 --user admin --password secret --insecure-tls
+synocli cli-config show
 ```
 
-Example endpoint: `https://192.168.0.1:5001`
-
-### Mode A: Explicit flags
-
-- `--user <username>`
-- one of:
-  - `--password <password>`
-  - `--password-stdin`
-
-### Mode B: Credentials file
-
-- `--credentials-file <path>`
-- must not be combined with `--user`, `--password`, or `--password-stdin`
+Config file permissions must be `0600`.
 
 Credentials file format is ENV-style:
 
@@ -46,6 +45,8 @@ password=secret
 
 ## Global Flags
 
+- `--endpoint string`
+- `--config string` (default `~/.synocli/config`)
 - `--credentials-file string`
 - `--user string`
 - `--password string`
@@ -59,91 +60,91 @@ password=secret
 
 ### auth
 
-- `synocli auth ping <endpoint>`
-- `synocli auth whoami <endpoint>`
-- `synocli auth api-info <endpoint> [--prefix <api-prefix>]`
+- `synocli auth ping`
+- `synocli auth whoami`
+- `synocli auth api-info [--prefix <api-prefix>]`
 
 ### ds
 
-- `synocli ds list <endpoint>`
-- `synocli ds get <endpoint> <task-id>`
-- `synocli ds add <endpoint> <input> [--destination <folder>]`
-- `synocli ds pause <endpoint> <task-id> [<task-id>...]`
-- `synocli ds resume <endpoint> <task-id> [<task-id>...]`
-- `synocli ds delete <endpoint> <task-id> [<task-id>...] [--with-data]`
-- `synocli ds wait <endpoint> <task-id> [--interval <duration>] [--max-wait <duration>]`
-- `synocli ds watch <endpoint> [--interval <duration>] [--id <task-id>]... [--status <normalized>]...`
+- `synocli ds list`
+- `synocli ds get <task-id>`
+- `synocli ds add <input> [--destination <folder>]`
+- `synocli ds pause <task-id> [<task-id>...]`
+- `synocli ds resume <task-id> [<task-id>...]`
+- `synocli ds delete <task-id> [<task-id>...] [--with-data]`
+- `synocli ds wait <task-id> [--interval <duration>] [--max-wait <duration>]`
+- `synocli ds watch [--interval <duration>] [--id <task-id>]... [--status <normalized>]...`
 
 ### fs (alias: filestation)
 
 Core:
-- `synocli fs info <endpoint>`
-- `synocli fs shares <endpoint>`
-- `synocli fs list <endpoint> <folder-path> [...]` (alias: `fs ls`)
-- `synocli fs get <endpoint> <path> [<path>...]`
-- `synocli fs mkdir <endpoint> <parent-path> <name> [<name>...] [--parents]`
-- `synocli fs rename <endpoint> <path> <new-name>`
-- `synocli fs copy <endpoint> <path> [<path>...] --to <destination> [--overwrite|--skip-existing] [--async]` (alias: `fs cp`)
-- `synocli fs move <endpoint> <path> [<path>...] --to <destination> [--overwrite|--skip-existing] [--async]` (alias: `fs mv`)
-- `synocli fs delete <endpoint> <path> [<path>...] -r|--recursive [--async]`
+- `synocli fs info`
+- `synocli fs shares`
+- `synocli fs list <folder-path> [...]` (alias: `fs ls`)
+- `synocli fs get <path> [<path>...]`
+- `synocli fs mkdir <parent-path> <name> [<name>...] [--parents]`
+- `synocli fs rename <path> <new-name>`
+- `synocli fs copy <path> [<path>...] --to <destination> [--overwrite|--skip-existing] [--async]` (alias: `fs cp`)
+- `synocli fs move <path> [<path>...] --to <destination> [--overwrite|--skip-existing] [--async]` (alias: `fs mv`)
+- `synocli fs delete <path> [<path>...] -r|--recursive [--async]`
 
 Transfer:
-- `synocli fs upload <endpoint> <local-path> <remote-path> [--parents] [--overwrite|--skip-existing]`
-- `synocli fs download <endpoint> <remote-path> [<remote-path>...] --output <local-file> [--mode download|open]`
+- `synocli fs upload <local-path> <remote-path> [--parents] [--overwrite|--skip-existing]`
+- `synocli fs download <remote-path> [<remote-path>...] --output <local-file> [--mode download|open]`
 
 Search:
-- `synocli fs search <endpoint> <folder-path> --pattern <pattern> [--recursive] [--async]`
-- `synocli fs search-results <endpoint> <task-id>`
-- `synocli fs search-stop <endpoint> <task-id>`
-- `synocli fs search-clear <endpoint>`
+- `synocli fs search <folder-path> --pattern <pattern> [--recursive] [--async]`
+- `synocli fs search-results <task-id>`
+- `synocli fs search-stop <task-id>`
+- `synocli fs search-clear`
 
 Task APIs:
-- `synocli fs dir-size <endpoint> <path> [<path>...] [--async]`
-- `synocli fs dir-size-status <endpoint> <task-id>`
-- `synocli fs dir-size-stop <endpoint> <task-id>`
-- `synocli fs md5 <endpoint> <file-path> [--async]`
-- `synocli fs md5-status <endpoint> <task-id>`
-- `synocli fs md5-stop <endpoint> <task-id>`
-- `synocli fs extract <endpoint> <archive-path> --to <dest-folder> [--async]`
-- `synocli fs extract-status <endpoint> <task-id>`
-- `synocli fs extract-stop <endpoint> <task-id>`
-- `synocli fs compress <endpoint> <path> [<path>...] --to <dest-archive> [--async]`
-- `synocli fs compress-status <endpoint> <task-id>`
-- `synocli fs compress-stop <endpoint> <task-id>`
+- `synocli fs dir-size <path> [<path>...] [--async]`
+- `synocli fs dir-size-status <task-id>`
+- `synocli fs dir-size-stop <task-id>`
+- `synocli fs md5 <file-path> [--async]`
+- `synocli fs md5-status <task-id>`
+- `synocli fs md5-stop <task-id>`
+- `synocli fs extract <archive-path> --to <dest-folder> [--async]`
+- `synocli fs extract-status <task-id>`
+- `synocli fs extract-stop <task-id>`
+- `synocli fs compress <path> [<path>...] --to <dest-archive> [--async]`
+- `synocli fs compress-status <task-id>`
+- `synocli fs compress-stop <task-id>`
 
 Background tasks and watch:
-- `synocli fs tasks <endpoint>`
-- `synocli fs tasks-clear <endpoint> [--task-id <id>]...`
-- `synocli fs watch tasks <endpoint> [--interval <duration>]`
-- `synocli fs watch folder <endpoint> <folder-path> [--interval <duration>] [--recursive]`
+- `synocli fs tasks`
+- `synocli fs tasks-clear [--task-id <id>]...`
+- `synocli fs watch tasks [--interval <duration>]`
+- `synocli fs watch folder <folder-path> [--interval <duration>] [--recursive]`
 
 ## Examples
 
 ```bash
 # auth checks
-synocli auth ping https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli auth ping --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
 
 # download station
-synocli ds list https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli ds list --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
 
 # file station core
-synocli fs shares https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
-synocli fs ls https://192.168.0.1:5001 /volume1 --credentials-file ./creds.env --insecure-tls
-synocli fs cp https://192.168.0.1:5001 /volume1/a.txt --to /volume1/archive --credentials-file ./creds.env --insecure-tls
-synocli fs mv https://192.168.0.1:5001 /volume1/archive/a.txt --to /volume1/final --credentials-file ./creds.env --insecure-tls
-synocli fs delete https://192.168.0.1:5001 /volume1/archive/old -r --credentials-file ./creds.env --insecure-tls
+synocli fs shares --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli fs ls /volume1 --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli fs cp /volume1/a.txt --to /volume1/archive --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli fs mv /volume1/archive/a.txt --to /volume1/final --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli fs delete /volume1/archive/old -r --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
 
 # file station transfer
-synocli fs upload https://192.168.0.1:5001 ./build.tar.gz /volume1/uploads --credentials-file ./creds.env --insecure-tls
-synocli fs download https://192.168.0.1:5001 /volume1/uploads/build.tar.gz --output ./build.tar.gz --credentials-file ./creds.env --insecure-tls
+synocli fs upload ./build.tar.gz /volume1/uploads --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli fs download /volume1/uploads/build.tar.gz --output ./build.tar.gz --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
 
 # search and tasks
-synocli fs search https://192.168.0.1:5001 /volume1 --pattern report --credentials-file ./creds.env --insecure-tls
-synocli fs tasks https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli fs search /volume1 --pattern report --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli fs tasks --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
 
 # watch
-synocli fs watch tasks https://192.168.0.1:5001 --interval 2s --credentials-file ./creds.env --insecure-tls
-synocli fs watch folder https://192.168.0.1:5001 /volume1 --interval 2s --recursive --credentials-file ./creds.env --insecure-tls
+synocli fs watch tasks --endpoint https://192.168.0.1:5001 --interval 2s --credentials-file ./creds.env --insecure-tls
+synocli fs watch folder /volume1 --endpoint https://192.168.0.1:5001 --interval 2s --recursive --credentials-file ./creds.env --insecure-tls
 ```
 
 ## Output
@@ -192,8 +193,7 @@ make test
 
 Manual File Station test plan:
 
-- `testplans/filestation.md`
-- `testplans/filestation.sh` (runnable script derived from the plan)
+- `testplans/filestation.sh`
 
 ## Architecture
 
