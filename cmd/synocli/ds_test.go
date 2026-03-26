@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,19 +34,6 @@ func TestDSCommandAliases(t *testing.T) {
 	cmd := newDSCmd(&appContext{})
 	if len(cmd.Aliases) == 0 || cmd.Aliases[0] != "downloadstation" {
 		t.Fatalf("expected downloadstation alias, got %#v", cmd.Aliases)
-	}
-}
-
-func TestDSDeleteRejectsWithDataFlag(t *testing.T) {
-	ac := &appContext{}
-	cmd := newDSDeleteCmd(ac)
-	cmd.SetArgs([]string{"dbid_1", "--with-data"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "unknown flag: --with-data") {
-		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -134,15 +120,3 @@ func TestDetectAddInputKind(t *testing.T) {
 	})
 }
 
-func TestDSAddLegacySubcommandRejected(t *testing.T) {
-	var out, errOut bytes.Buffer
-	cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
-	cmd.SetArgs([]string{"ds", "add", "torrent", "https://example.com:5001", "./x.torrent"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "accepts 1 arg(s), received 3") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}

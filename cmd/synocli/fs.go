@@ -410,12 +410,15 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 				if taskID == "" {
 					return nil, apperr.New("internal_error", "delete task id missing", 1)
 				}
-				status, err := waitFSTask(ctx, s.fsClient, filestation.APIDelete, taskID, interval, maxWait)
-				if err != nil {
-					return nil, err
-				}
 				out["task_id"] = taskID
-				out["status"] = status
+				if !async {
+					status, err := waitFSTask(ctx, s.fsClient, filestation.APIDelete, taskID, interval, maxWait)
+					if err != nil {
+						return nil, err
+					}
+					out["status"] = status
+					out["waited"] = true
+				}
 				if ac.opts.JSON {
 					return out, nil
 				}
@@ -1258,6 +1261,10 @@ func uploadRecursiveCP(ctx context.Context, c *filestation.Client, localDir, rem
 		if err != nil {
 			return err
 		}
+		// Upload may succeed server-side but return an error (e.g. malformed
+		// response). If the file landed under its local name we can still
+		// rename it to the intended remote name, so only propagate the
+		// upload error when the rename fallback also fails.
 		if _, err := c.Upload(ctx, params, p); err != nil {
 			if renameErr := renameUploadedFile(ctx, c, parent, filepath.Base(p), path.Base(remoteCurrent)); renameErr != nil {
 				return err
@@ -1312,10 +1319,7 @@ func uploadParams(ctx context.Context, c *filestation.Client, remoteDir string, 
 	} else {
 		params["overwrite"] = "false"
 	}
-	if skipExisting {
-		// Version 2 API has only bool overwrite; best effort skip is handled by caller for recursive mode.
-		_ = ctx
-	}
+	// Version 2 API has only bool overwrite; skip is handled by caller for recursive mode.
 	return params, nil
 }
 

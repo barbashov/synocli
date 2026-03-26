@@ -89,5 +89,19 @@ func (c *Client) Logout(ctx context.Context, sid, session string) error {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	var out struct {
+		Success bool           `json:"success"`
+		Error   *ErrorResponse `json:"error,omitempty"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return fmt.Errorf("decode logout response: %w", err)
+	}
+	if !out.Success {
+		code := 0
+		if out.Error != nil {
+			code = out.Error.Code
+		}
+		return fmt.Errorf("logout failed with code %d", code)
+	}
 	return nil
 }

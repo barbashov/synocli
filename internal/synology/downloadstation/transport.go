@@ -70,20 +70,24 @@ func (c *Client) doGETToPath(ctx context.Context, path string, vals url.Values, 
 	}
 	if v, ok := out.(*listResponse); ok {
 		if !v.Success {
-			code := 0
-			if v.Error != nil {
-				code = v.Error.Code
-			}
-			apiErr := &APIError{Code: code}
-			if v.Error != nil && v.Error.Errors != nil {
-				apiErr.Name = v.Error.Errors.Name
-				apiErr.Reason = v.Error.Errors.Reason
-				apiErr.FailedTasks = append(apiErr.FailedTasks, v.Error.Errors.FailedTask...)
-			}
-			return apiErr
+			return apiErrorFromBase(v.baseResponse)
 		}
 	}
 	return nil
+}
+
+func apiErrorFromBase(base baseResponse) *APIError {
+	code := 0
+	if base.Error != nil {
+		code = base.Error.Code
+	}
+	apiErr := &APIError{Code: code}
+	if base.Error != nil && base.Error.Errors != nil {
+		apiErr.Name = base.Error.Errors.Name
+		apiErr.Reason = base.Error.Errors.Reason
+		apiErr.FailedTasks = append(apiErr.FailedTasks, base.Error.Errors.FailedTask...)
+	}
+	return apiErr
 }
 
 func decodeBase(r io.Reader) error {
@@ -92,17 +96,7 @@ func decodeBase(r io.Reader) error {
 		return fmt.Errorf("decode base response: %w", err)
 	}
 	if !out.Success {
-		code := 0
-		if out.Error != nil {
-			code = out.Error.Code
-		}
-		apiErr := &APIError{Code: code}
-		if out.Error != nil && out.Error.Errors != nil {
-			apiErr.Name = out.Error.Errors.Name
-			apiErr.Reason = out.Error.Errors.Reason
-			apiErr.FailedTasks = append(apiErr.FailedTasks, out.Error.Errors.FailedTask...)
-		}
-		return apiErr
+		return apiErrorFromBase(out)
 	}
 	return nil
 }
@@ -118,17 +112,7 @@ func decodeAction(r io.Reader) error {
 		return fmt.Errorf("decode action response: %w", err)
 	}
 	if !out.Success {
-		code := 0
-		if out.Error != nil {
-			code = out.Error.Code
-		}
-		apiErr := &APIError{Code: code}
-		if out.Error != nil && out.Error.Errors != nil {
-			apiErr.Name = out.Error.Errors.Name
-			apiErr.Reason = out.Error.Errors.Reason
-			apiErr.FailedTasks = append(apiErr.FailedTasks, out.Error.Errors.FailedTask...)
-		}
-		return apiErr
+		return apiErrorFromBase(out.baseResponse)
 	}
 	failed := make([]FailedTask, 0, len(out.Data.FailedTask))
 	for _, ft := range out.Data.FailedTask {
@@ -151,17 +135,7 @@ func decodeCreate(r io.Reader) ([]string, []string, error) {
 		return nil, nil, fmt.Errorf("decode create response: %w", err)
 	}
 	if !out.Success {
-		code := 0
-		if out.Error != nil {
-			code = out.Error.Code
-		}
-		apiErr := &APIError{Code: code}
-		if out.Error != nil && out.Error.Errors != nil {
-			apiErr.Name = out.Error.Errors.Name
-			apiErr.Reason = out.Error.Errors.Reason
-			apiErr.FailedTasks = append(apiErr.FailedTasks, out.Error.Errors.FailedTask...)
-		}
-		return nil, nil, apiErr
+		return nil, nil, apiErrorFromBase(out.baseResponse)
 	}
 	return stringSliceFromAny(out.Data.TaskID), stringSliceFromAny(out.Data.ListID), nil
 }
