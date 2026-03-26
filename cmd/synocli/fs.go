@@ -634,18 +634,23 @@ func newFSSearchStopCmd(ac *appContext) *cobra.Command {
 
 func newFSSearchClearCmd(ac *appContext) *cobra.Command {
 	return &cobra.Command{
-		Use:   "search-clear",
+		Use:   "search-clear <task-id> [<task-id>...]",
 		Short: "Clear search tasks",
-		Args:  cobra.NoArgs,
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ac.withFSSession(cmd, joinCommand("fs", "search-clear"), func(ctx context.Context, s *session) (any, error) {
-				if err := s.fsClient.Call(ctx, filestation.APISearch, "clean", nil, nil); err != nil {
-					return nil, err
+				for _, taskID := range args {
+					if err := s.fsClient.Call(ctx, filestation.APISearch, "clean", makeValues("taskid", taskID), nil); err != nil {
+						return nil, err
+					}
 				}
 				if ac.opts.JSON {
-					return map[string]any{"cleared": true}, nil
+					return map[string]any{"cleared": true, "task_ids": args}, nil
 				}
-				printKVBlock(ac.out, "Search", []kvField{{Label: "Cleared", Value: "true"}})
+				printKVBlock(ac.out, "Search", []kvField{
+					{Label: "Cleared", Value: "true"},
+					{Label: "Task IDs", Value: strings.Join(args, ", ")},
+				})
 				return nil, nil
 			})
 		},
@@ -922,6 +927,7 @@ func newFSWatchCmd(ac *appContext) *cobra.Command {
 func newFSWatchTasksCmd(ac *appContext) *cobra.Command {
 	var interval time.Duration
 	var limit int
+	var once bool
 	cmd := &cobra.Command{
 		Use:   "tasks",
 		Short: "Watch background tasks",
@@ -951,6 +957,9 @@ func newFSWatchTasksCmd(ac *appContext) *cobra.Command {
 						printKVBlock(ac.out, "File Station Task Watch", []kvField{{Label: "Timestamp", Value: time.Now().Format(time.RFC3339)}})
 						printBackgroundTasks(ac.out, out)
 					}
+					if once {
+						return nil
+					}
 					select {
 					case <-ctx.Done():
 						return ctx.Err()
@@ -962,6 +971,7 @@ func newFSWatchTasksCmd(ac *appContext) *cobra.Command {
 	}
 	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
 	cmd.Flags().IntVar(&limit, "limit", 100, "Max tasks per snapshot")
+	cmd.Flags().BoolVar(&once, "once", false, "Emit one snapshot and exit")
 	return cmd
 }
 
@@ -969,6 +979,7 @@ func newFSWatchFolderCmd(ac *appContext) *cobra.Command {
 	var interval time.Duration
 	var recursive bool
 	var additional []string
+	var once bool
 	cmd := &cobra.Command{
 		Use:   "folder <folder-path>",
 		Short: "Watch folder listing",
@@ -1011,6 +1022,9 @@ func newFSWatchFolderCmd(ac *appContext) *cobra.Command {
 						}
 						printTable(ac.out, []string{"Name", "Path", "Dir"}, rows)
 					}
+					if once {
+						return nil
+					}
 					select {
 					case <-ctx.Done():
 						return ctx.Err()
@@ -1023,6 +1037,7 @@ func newFSWatchFolderCmd(ac *appContext) *cobra.Command {
 	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
 	cmd.Flags().BoolVar(&recursive, "recursive", false, "Recursive listing")
 	cmd.Flags().StringSliceVar(&additional, "additional", []string{"real_path", "size", "time", "type"}, "Additional fields")
+	cmd.Flags().BoolVar(&once, "once", false, "Emit one snapshot and exit")
 	return cmd
 }
 

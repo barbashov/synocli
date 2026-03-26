@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 func TestFSCopyRequiresDestinationFlag(t *testing.T) {
@@ -33,6 +35,19 @@ func TestFSSearchRequiresPattern(t *testing.T) {
 	}
 }
 
+func TestFSSearchClearRequiresTaskID(t *testing.T) {
+	ac := &appContext{}
+	cmd := newFSSearchClearCmd(ac)
+	cmd.SetArgs([]string{})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "requires at least 1 arg(s)") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRootIncludesFSAlias(t *testing.T) {
 	var out, errOut bytes.Buffer
 	cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
@@ -57,6 +72,31 @@ func TestFSCopyMoveAliases(t *testing.T) {
 	}
 	if len(moveCmd.Aliases) == 0 || moveCmd.Aliases[0] != "mv" {
 		t.Fatalf("expected mv alias, got %#v", moveCmd.Aliases)
+	}
+}
+
+func TestFSWatchOnceFlags(t *testing.T) {
+	watchCmd := newFSWatchCmd(&appContext{})
+	var tasksCmd, folderCmd *cobra.Command
+	for _, c := range watchCmd.Commands() {
+		switch c.Name() {
+		case "tasks":
+			tasksCmd = c
+		case "folder":
+			folderCmd = c
+		}
+	}
+	if tasksCmd == nil {
+		t.Fatal("tasks watch subcommand not found")
+	}
+	if folderCmd == nil {
+		t.Fatal("folder watch subcommand not found")
+	}
+	if tasksCmd.Flags().Lookup("once") == nil {
+		t.Fatal("tasks watch missing --once flag")
+	}
+	if folderCmd.Flags().Lookup("once") == nil {
+		t.Fatal("folder watch missing --once flag")
 	}
 }
 

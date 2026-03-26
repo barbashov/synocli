@@ -96,7 +96,7 @@ Search:
 - `synocli fs search <folder-path> --pattern <pattern> [--recursive] [--async]`
 - `synocli fs search-results <task-id>`
 - `synocli fs search-stop <task-id>`
-- `synocli fs search-clear`
+- `synocli fs search-clear <task-id> [<task-id>...]`
 
 Task APIs:
 - `synocli fs dir-size <path> [<path>...] [--async]`
@@ -115,8 +115,8 @@ Task APIs:
 Background tasks and watch:
 - `synocli fs tasks`
 - `synocli fs tasks-clear [--task-id <id>]...`
-- `synocli fs watch tasks [--interval <duration>]`
-- `synocli fs watch folder <folder-path> [--interval <duration>] [--recursive]`
+- `synocli fs watch tasks [--interval <duration>] [--once]`
+- `synocli fs watch folder <folder-path> [--interval <duration>] [--recursive] [--once]`
 
 ## Examples
 
@@ -140,11 +140,13 @@ synocli fs download /volume1/uploads/build.tar.gz --output ./build.tar.gz --endp
 
 # search and tasks
 synocli fs search /volume1 --pattern report --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli fs search-clear 69C55B2FB4F795C1 --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
 synocli fs tasks --endpoint https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
 
 # watch
 synocli fs watch tasks --endpoint https://192.168.0.1:5001 --interval 2s --credentials-file ./creds.env --insecure-tls
 synocli fs watch folder /volume1 --endpoint https://192.168.0.1:5001 --interval 2s --recursive --credentials-file ./creds.env --insecure-tls
+synocli fs watch tasks --endpoint https://192.168.0.1:5001 --once --json --credentials-file ./creds.env --insecure-tls
 ```
 
 ## Output
@@ -193,7 +195,7 @@ make test
 
 Manual File Station test plan:
 
-- `testplans/filestation.sh`
+- `tests_e2e/filestation.sh`
 
 ## Architecture
 
