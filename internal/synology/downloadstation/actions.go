@@ -10,14 +10,14 @@ func (c *Client) Pause(ctx context.Context, ids []string) error {
 	vals := c.baseValues()
 	vals.Set("method", "pause")
 	vals.Set("id", strings.Join(ids, ","))
-	return c.doGET(ctx, vals, nil)
+	return c.doGETAction(ctx, vals)
 }
 
 func (c *Client) Resume(ctx context.Context, ids []string) error {
 	vals := c.baseValues()
 	vals.Set("method", "resume")
 	vals.Set("id", strings.Join(ids, ","))
-	return c.doGET(ctx, vals, nil)
+	return c.doGETAction(ctx, vals)
 }
 
 func (c *Client) Delete(ctx context.Context, ids []string, withData bool) error {
@@ -25,5 +25,5 @@ func (c *Client) Delete(ctx context.Context, ids []string, withData bool) error 
 	vals.Set("method", "delete")
 	vals.Set("id", strings.Join(ids, ","))
 	vals.Set("force_complete", strconv.FormatBool(withData))
-	return c.doGET(ctx, vals, nil)
+	return c.doGETAction(ctx, vals)
 }

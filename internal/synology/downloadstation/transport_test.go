@@ -26,6 +26,67 @@ func TestDecodeCreatePropagatesDetailedAPIError(t *testing.T) {
 	}
 }
 
+func TestDecodeBasePropagatesFailedTaskDetails(t *testing.T) {
+	err := decodeBase(strings.NewReader(`{
+		"success": false,
+		"error": {
+			"code": 405,
+			"errors": {
+				"failed_task": [{"id": "dbid_1", "error": 405}]
+			}
+		}
+	}`))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T", err)
+	}
+	if apiErr.Code != 405 {
+		t.Fatalf("unexpected code: %d", apiErr.Code)
+	}
+	if len(apiErr.FailedTasks) != 1 {
+		t.Fatalf("expected 1 failed task, got %#v", apiErr.FailedTasks)
+	}
+	if apiErr.FailedTasks[0].ID != "dbid_1" || apiErr.FailedTasks[0].Code != 405 {
+		t.Fatalf("unexpected failed task: %#v", apiErr.FailedTasks[0])
+	}
+}
+
+func TestDecodeActionTreatsNonZeroFailedTaskAsError(t *testing.T) {
+	err := decodeAction(strings.NewReader(`{
+		"success": true,
+		"data": {
+			"failed_task": [{"id":"dbid_1","error":405}]
+		}
+	}`))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T", err)
+	}
+	if apiErr.Code != 405 {
+		t.Fatalf("unexpected code: %d", apiErr.Code)
+	}
+	if len(apiErr.FailedTasks) != 1 || apiErr.FailedTasks[0].ID != "dbid_1" || apiErr.FailedTasks[0].Code != 405 {
+		t.Fatalf("unexpected failed tasks: %#v", apiErr.FailedTasks)
+	}
+}
+
+func TestDecodeActionIgnoresZeroFailedTaskCode(t *testing.T) {
+	if err := decodeAction(strings.NewReader(`{
+		"success": true,
+		"data": {
+			"failed_task": [{"id":"dbid_1","error":0}]
+		}
+	}`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestStringSliceFromAny(t *testing.T) {
 	cases := []struct {
 		name string

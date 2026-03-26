@@ -14,6 +14,23 @@ func (c *Client) doGET(ctx context.Context, vals url.Values, out any) error {
 	return c.doGETToPath(ctx, c.path, vals, out)
 }
 
+func (c *Client) doGETAction(ctx context.Context, vals url.Values) error {
+	u := c.endpoint + c.path + "?" + vals.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	if sid := vals.Get("_sid"); sid != "" {
+		req.AddCookie(&http.Cookie{Name: "id", Value: sid})
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return decodeAction(resp.Body)
+}
+
 func (c *Client) doGETCreateToPath(ctx context.Context, path string, vals url.Values) ([]string, []string, error) {
 	u := c.endpoint + path + "?" + vals.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -61,6 +78,7 @@ func (c *Client) doGETToPath(ctx context.Context, path string, vals url.Values, 
 			if v.Error != nil && v.Error.Errors != nil {
 				apiErr.Name = v.Error.Errors.Name
 				apiErr.Reason = v.Error.Errors.Reason
+				apiErr.FailedTasks = append(apiErr.FailedTasks, v.Error.Errors.FailedTask...)
 			}
 			return apiErr
 		}
@@ -82,8 +100,47 @@ func decodeBase(r io.Reader) error {
 		if out.Error != nil && out.Error.Errors != nil {
 			apiErr.Name = out.Error.Errors.Name
 			apiErr.Reason = out.Error.Errors.Reason
+			apiErr.FailedTasks = append(apiErr.FailedTasks, out.Error.Errors.FailedTask...)
 		}
 		return apiErr
+	}
+	return nil
+}
+
+func decodeAction(r io.Reader) error {
+	var out struct {
+		baseResponse
+		Data struct {
+			FailedTask []FailedTask `json:"failed_task"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(r).Decode(&out); err != nil {
+		return fmt.Errorf("decode action response: %w", err)
+	}
+	if !out.Success {
+		code := 0
+		if out.Error != nil {
+			code = out.Error.Code
+		}
+		apiErr := &APIError{Code: code}
+		if out.Error != nil && out.Error.Errors != nil {
+			apiErr.Name = out.Error.Errors.Name
+			apiErr.Reason = out.Error.Errors.Reason
+			apiErr.FailedTasks = append(apiErr.FailedTasks, out.Error.Errors.FailedTask...)
+		}
+		return apiErr
+	}
+	failed := make([]FailedTask, 0, len(out.Data.FailedTask))
+	for _, ft := range out.Data.FailedTask {
+		if ft.Code != 0 {
+			failed = append(failed, ft)
+		}
+	}
+	if len(failed) > 0 {
+		return &APIError{
+			Code:        failed[0].Code,
+			FailedTasks: failed,
+		}
 	}
 	return nil
 }
@@ -102,6 +159,7 @@ func decodeCreate(r io.Reader) ([]string, []string, error) {
 		if out.Error != nil && out.Error.Errors != nil {
 			apiErr.Name = out.Error.Errors.Name
 			apiErr.Reason = out.Error.Errors.Reason
+			apiErr.FailedTasks = append(apiErr.FailedTasks, out.Error.Errors.FailedTask...)
 		}
 		return nil, nil, apiErr
 	}

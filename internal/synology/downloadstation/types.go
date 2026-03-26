@@ -4,15 +4,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 type APIError struct {
-	Code   int
-	Name   string
-	Reason string
+	Code        int
+	Name        string
+	Reason      string
+	FailedTasks []FailedTask
 }
 
 func (e *APIError) Error() string {
+	if len(e.FailedTasks) > 0 {
+		parts := make([]string, 0, len(e.FailedTasks))
+		for _, ft := range e.FailedTasks {
+			parts = append(parts, fmt.Sprintf("%s:%d", ft.ID, ft.Code))
+		}
+		return fmt.Sprintf("download station api error code=%d (%s): failed_task=%s", e.Code, ErrorMessage(e.Code), strings.Join(parts, ","))
+	}
 	if e.Name != "" {
 		return fmt.Sprintf("download station api error code=%d (%s): %s %s", e.Code, ErrorMessage(e.Code), e.Name, e.Reason)
 	}
@@ -91,12 +100,20 @@ type TaskTransfer struct {
 type baseResponse struct {
 	Success bool `json:"success"`
 	Error   *struct {
-		Code   int `json:"code"`
-		Errors *struct {
-			Name   string `json:"name"`
-			Reason string `json:"reason"`
-		} `json:"errors,omitempty"`
+		Code   int           `json:"code"`
+		Errors *ErrorDetails `json:"errors,omitempty"`
 	} `json:"error,omitempty"`
+}
+
+type ErrorDetails struct {
+	Name       string       `json:"name,omitempty"`
+	Reason     string       `json:"reason,omitempty"`
+	FailedTask []FailedTask `json:"failed_task,omitempty"`
+}
+
+type FailedTask struct {
+	Code int    `json:"error"`
+	ID   string `json:"id"`
 }
 
 type listResponse struct {
@@ -126,15 +143,15 @@ var errorMessages = map[int]string{
 	105: "insufficient user privilege",
 	106: "session timeout",
 	107: "session interrupted by duplicate login",
-	400: "invalid parameter of task",
-	401: "unknown task",
-	402: "invalid task id",
-	403: "file upload failed",
-	404: "max number of tasks reached",
-	405: "destination denied",
-	406: "destination does not exist",
-	407: "invalid task action",
-	408: "unsupported protocol type",
+	400: "file upload failed",
+	401: "max number of tasks reached",
+	402: "destination denied",
+	403: "destination does not exist",
+	404: "invalid task id",
+	405: "invalid task action",
+	406: "no default destination",
+	407: "set destination failed",
+	408: "file does not exist",
 	120: "required parameter missing",
 }
 

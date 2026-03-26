@@ -193,9 +193,10 @@ Example envelope:
 make test
 ```
 
-Manual File Station test plan:
+Manual e2e scripts:
 
 - `tests_e2e/filestation.sh`
+- `tests_e2e/downloadstation.sh` (uses built-in fixtures from `webtorrent.io/free-torrents` and `raw.githubusercontent.com`)
 
 ## Architecture
 

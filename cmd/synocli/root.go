@@ -227,17 +227,35 @@ func toAppError(err error) error {
 	if errors.As(err, &dsErr) {
 		code := "synology_error"
 		exit := 1
-		if dsErr.Code == 401 || dsErr.Code == 402 {
+		if dsErr.Code == 404 {
 			exit = 3
+		}
+		details := map[string]any{
+			"synology_code": dsErr.Code,
+		}
+		if len(dsErr.FailedTasks) > 0 {
+			failed := make([]map[string]any, 0, len(dsErr.FailedTasks))
+			ids := make([]string, 0, len(dsErr.FailedTasks))
+			for _, ft := range dsErr.FailedTasks {
+				failed = append(failed, map[string]any{
+					"id":   ft.ID,
+					"code": ft.Code,
+				})
+				if ft.ID != "" {
+					ids = append(ids, ft.ID)
+				}
+			}
+			details["failed_tasks"] = failed
+			if len(ids) > 0 {
+				details["failed_task_ids"] = ids
+			}
 		}
 		return &apperr.Error{
 			Code:     code,
 			Message:  downloadstation.ErrorMessage(dsErr.Code),
 			ExitCode: exit,
-			Details: map[string]any{
-				"synology_code": dsErr.Code,
-			},
-			Err: err,
+			Details:  details,
+			Err:      err,
 		}
 	}
 	var fsErr *filestation.APIError

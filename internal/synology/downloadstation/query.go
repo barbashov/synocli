@@ -56,5 +56,5 @@ func (c *Client) Get(ctx context.Context, id string) (*Task, error) {
 	if len(out.Data.Task) > 0 {
 		return &out.Data.Task[0], nil
 	}
-	return nil, &APIError{Code: 401}
+	return nil, &APIError{Code: 404}
 }
