@@ -106,10 +106,12 @@ synocli ds watch https://192.168.0.1:5001 --interval 2s --status downloading --c
 
 ### Human output
 
-- `ds list` shows table columns including normalized status and raw status.
-- `ds get` prints detailed fields line-by-line.
+- Human output uses styled tables and compact key-value blocks.
+- Styling is enabled on TTY and disabled automatically for redirected/piped output and `NO_COLOR`.
+- `auth api-info` is rendered as a sorted table with match summary.
+- `ds watch` uses in-place refresh on TTY; JSON mode remains append-only snapshots.
 - `ds add` auto-detects input type in this order: magnet URI, existing local file (torrent), URL with scheme.
-- For DS2 numeric statuses, raw status is rendered as enum with code, e.g. `paused (3)`.
+- For DS2 numeric statuses, status is rendered with enum and code, e.g. `paused (3)`.
 
 ### JSON envelope (`--json`)
 

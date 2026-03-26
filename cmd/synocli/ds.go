@@ -11,8 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"synocli/internal/apperr"
 	"synocli/internal/output"
 	"synocli/internal/synology/downloadstation"
@@ -73,26 +71,16 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return data, nil
 				}
-				switch kind {
-				case addInputURL:
-					if len(taskIDs) > 0 {
-						_, _ = fmt.Fprintf(ac.out, "added URL download: %s (task_ids=%s)\n", input, strings.Join(taskIDs, ","))
-					} else {
-						_, _ = fmt.Fprintf(ac.out, "added URL download: %s\n", input)
-					}
-				case addInputMagnet:
-					if len(taskIDs) > 0 {
-						_, _ = fmt.Fprintf(ac.out, "added magnet download (task_ids=%s)\n", strings.Join(taskIDs, ","))
-					} else {
-						_, _ = fmt.Fprintln(ac.out, "added magnet download")
-					}
-				case addInputTorrent:
-					if len(taskIDs) > 0 {
-						_, _ = fmt.Fprintf(ac.out, "added torrent: %s (task_ids=%s)\n", input, strings.Join(taskIDs, ","))
-					} else {
-						_, _ = fmt.Fprintf(ac.out, "added torrent: %s\n", input)
-					}
+				inputKey := "URI"
+				if kind == addInputTorrent {
+					inputKey = "File"
 				}
+				printKVBlock(ac.out, "Download Added", []kvField{
+					{Label: "Kind", Value: string(kind)},
+					{Label: inputKey, Value: input},
+					{Label: "Destination", Value: valueOrDash(destination)},
+					{Label: "Task IDs", Value: joinOrDash(taskIDs)},
+				})
 				for _, tid := range taskIDs {
 					task, err := s.dsClient.Get(ctx, tid)
 					if err != nil {
@@ -154,26 +142,8 @@ func newDSListCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return map[string]any{"tasks": mapped}, nil
 				}
-				rows := make([][]string, 0, len(tasks))
-				for _, t := range tasks {
-					rows = append(rows, []string{
-						t.ID,
-						t.Title,
-						downloadstation.StatusDisplay(t.Status),
-						t.Type,
-						valueOrDash(destinationOf(t)),
-						formatBytes(t.Size),
-						formatBytes(downloadedOf(t)),
-						formatPercent(downloadedOf(t), t.Size),
-						formatBytes(uploadedOf(t)),
-						formatSpeed(downSpeedOf(t)),
-						formatSpeed(upSpeedOf(t)),
-					})
-				}
-				printTable(ac.out,
-					[]string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "Up Speed"},
-					rows,
-				)
+				printKVBlock(ac.out, "Downloads", []kvField{{Label: "Tasks", Value: fmt.Sprintf("%d", len(tasks))}})
+				printTaskTable(ac.out, tasks)
 				return nil, nil
 			})
 		},
@@ -233,7 +203,10 @@ func newDSDeleteCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return data, nil
 				}
-				_, _ = fmt.Fprintf(ac.out, "delete: %s\n", strings.Join(ids, ", "))
+				printKVBlock(ac.out, "Delete", []kvField{
+					{Label: "Task IDs", Value: strings.Join(ids, ", ")},
+					{Label: "With Data", Value: fmt.Sprintf("%t", withData)},
+				})
 				return nil, nil
 			})
 		},
@@ -258,7 +231,9 @@ func actionWithIDs(ac *appContext, action string, run func(context.Context, *ses
 				if ac.opts.JSON {
 					return data, nil
 				}
-				_, _ = fmt.Fprintf(ac.out, "%s: %s\n", action, strings.Join(ids, ", "))
+				printKVBlock(ac.out, strings.ToUpper(action[:1])+action[1:], []kvField{
+					{Label: "Task IDs", Value: strings.Join(ids, ", ")},
+				})
 				return nil, nil
 			})
 		},
@@ -293,7 +268,12 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 						if ac.opts.JSON {
 							return data, nil
 						}
-						_, _ = fmt.Fprintf(ac.out, "task %s completed with status %s\n", id, n)
+						ui := newHumanUI(ac.out)
+						printKVBlock(ac.out, "Wait Result", []kvField{
+							{Label: "Task ID", Value: id},
+							{Label: "Result", Value: ui.status("success", "finished")},
+							{Label: "Status", Value: ui.status(downloadstation.StatusDisplay(task.Status), n)},
+						})
 						return nil, nil
 					}
 					if downloadstation.IsTerminalFailure(n) {
@@ -330,6 +310,8 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 			}
 			endpoint := args[0]
 			return ac.withStreamingSession(cmd, endpoint, joinCommand("ds", "watch"), func(ctx context.Context, s *session) error {
+				ui := newHumanUI(ac.out)
+				inPlace := ui.tty
 				statusSet := make(map[string]struct{}, len(statuses))
 				for _, st := range statuses {
 					statusSet[strings.ToLower(st)] = struct{}{}
@@ -352,24 +334,11 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 							return err
 						}
 					} else {
-						_, _ = fmt.Fprintf(ac.out, "[%s] tasks=%d\n", time.Now().Format(time.RFC3339), len(filtered))
-						rows := make([][]string, 0, len(filtered))
-						for _, t := range filtered {
-							rows = append(rows, []string{
-								t.ID,
-								t.Title,
-								downloadstation.StatusDisplay(t.Status),
-								t.Type,
-								valueOrDash(destinationOf(t)),
-								formatBytes(t.Size),
-								formatBytes(downloadedOf(t)),
-								formatPercent(downloadedOf(t), t.Size),
-								formatBytes(uploadedOf(t)),
-								formatSpeed(downSpeedOf(t)),
-								formatSpeed(upSpeedOf(t)),
-							})
+						if inPlace {
+							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
 						}
-						printTable(ac.out, []string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "Up Speed"}, rows)
+						printWatchHeader(ac.out, time.Now(), len(filtered), ids, statuses)
+						printTaskTable(ac.out, filtered)
 					}
 					select {
 					case <-ctx.Done():
@@ -535,24 +504,22 @@ func fileOf(t downloadstation.Task) any {
 }
 
 func printTaskDetail(w io.Writer, t downloadstation.Task) {
-	label := lipgloss.NewStyle().Bold(true).Width(16)
-	for _, line := range []string{
-		label.Render("ID:") + t.ID,
-		label.Render("Title:") + t.Title,
-		label.Render("Status:") + downloadstation.StatusDisplay(t.Status),
-		label.Render("Type:") + t.Type,
-		label.Render("Destination:") + valueOrDash(destinationOf(t)),
-		label.Render("Size:") + formatBytes(t.Size),
-		label.Render("Downloaded:") + formatBytes(downloadedOf(t)),
-		label.Render("Progress:") + formatPercent(downloadedOf(t), t.Size),
-		label.Render("Uploaded:") + formatBytes(uploadedOf(t)),
-		label.Render("Down Speed:") + formatSpeed(downSpeedOf(t)),
-		label.Render("Up Speed:") + formatSpeed(upSpeedOf(t)),
-		label.Render("URI:") + valueOrDash(uriOf(t)),
-		label.Render("Status Extra:") + valueOrDash(t.StatusExtra),
-	} {
-		_, _ = fmt.Fprintln(w, line)
-	}
+	ui := newHumanUI(w)
+	printKVBlock(w, "Task Detail", []kvField{
+		{Label: "ID", Value: t.ID},
+		{Label: "Title", Value: t.Title},
+		{Label: "Status", Value: ui.status(downloadstation.StatusDisplay(t.Status), downloadstation.NormalizeStatus(t.Status))},
+		{Label: "Type", Value: t.Type},
+		{Label: "Destination", Value: valueOrDash(destinationOf(t))},
+		{Label: "Size", Value: formatBytes(t.Size)},
+		{Label: "Downloaded", Value: formatBytes(downloadedOf(t))},
+		{Label: "Progress", Value: formatPercent(downloadedOf(t), t.Size)},
+		{Label: "Uploaded", Value: formatBytes(uploadedOf(t))},
+		{Label: "Down Speed", Value: formatSpeed(downSpeedOf(t))},
+		{Label: "Up Speed", Value: formatSpeed(upSpeedOf(t))},
+		{Label: "URI", Value: valueOrDash(uriOf(t))},
+		{Label: "Status Extra", Value: valueOrDash(t.StatusExtra)},
+	})
 }
 
 func valueOrDash(s string) string {
@@ -560,4 +527,32 @@ func valueOrDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func joinOrDash(values []string) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	return strings.Join(values, ", ")
+}
+
+func printTaskTable(w io.Writer, tasks []downloadstation.Task) {
+	ui := newHumanUI(w)
+	rows := make([][]string, 0, len(tasks))
+	for _, t := range tasks {
+		rows = append(rows, []string{
+			t.ID,
+			t.Title,
+			ui.status(downloadstation.StatusDisplay(t.Status), downloadstation.NormalizeStatus(t.Status)),
+			t.Type,
+			valueOrDash(destinationOf(t)),
+			formatBytes(t.Size),
+			formatBytes(downloadedOf(t)),
+			formatPercent(downloadedOf(t), t.Size),
+			formatBytes(uploadedOf(t)),
+			formatSpeed(downSpeedOf(t)),
+			formatSpeed(upSpeedOf(t)),
+		})
+	}
+	printTable(w, []string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "Up Speed"}, rows)
 }

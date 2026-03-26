@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"os"
 
 	"synocli/internal/apperr"
@@ -10,7 +10,10 @@ import (
 func main() {
 	root := newRootCmd(os.Stdin, os.Stdout, os.Stderr)
 	if err := root.Execute(); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err.Error())
+		var handled *jsonOutputHandledError
+		if !errors.As(err, &handled) {
+			printError(os.Stderr, err)
+		}
 		os.Exit(apperr.ExitCode(err))
 	}
 }

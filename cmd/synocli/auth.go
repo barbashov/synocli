@@ -27,7 +27,10 @@ func newAuthPingCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return map[string]any{"status": "ok", "user": ac.opts.User}, nil
 				}
-				_, _ = fmt.Fprintf(ac.out, "ok: authenticated as %s\n", ac.opts.User)
+				printKVBlock(ac.out, "Authentication", []kvField{
+					{Label: "Result", Value: "ok"},
+					{Label: "User", Value: ac.opts.User},
+				})
 				return nil, nil
 			})
 		},
@@ -45,7 +48,10 @@ func newAuthWhoamiCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return data, nil
 				}
-				_, _ = fmt.Fprintf(ac.out, "user: %s\nauthenticated: true\n", ac.opts.User)
+				printKVBlock(ac.out, "Identity", []kvField{
+					{Label: "User", Value: ac.opts.User},
+					{Label: "Authenticated", Value: "true"},
+				})
 				return nil, nil
 			})
 		},
@@ -78,11 +84,21 @@ func newAuthAPIInfoCmd(ac *appContext) *cobra.Command {
 					keys = append(keys, k)
 				}
 				sort.Strings(keys)
-				_, _ = fmt.Fprintln(ac.out, "api\tpath\tmin\tmax")
+				printKVBlock(ac.out, "DSM API Info", []kvField{
+					{Label: "Matched", Value: fmt.Sprintf("%d", len(keys))},
+					{Label: "Prefix", Value: valueOrDash(prefix)},
+				})
+				if len(keys) == 0 {
+					ui := newHumanUI(ac.out)
+					_, _ = fmt.Fprintln(ac.out, ui.muted("No APIs matched the current filter."))
+					return nil, nil
+				}
+				rows := make([][]string, 0, len(keys))
 				for _, k := range keys {
 					e := filtered[k]
-					_, _ = fmt.Fprintf(ac.out, "%s\t%s\t%d\t%d\n", k, e.Path, e.MinVersion, e.MaxVersion)
+					rows = append(rows, []string{k, e.Path, fmt.Sprintf("%d", e.MinVersion), fmt.Sprintf("%d", e.MaxVersion)})
 				}
+				printTable(ac.out, []string{"API", "Path", "Min", "Max"}, rows)
 				return nil, nil
 			})
 		},

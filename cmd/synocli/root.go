@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 
 	"synocli/internal/apperr"
@@ -36,6 +34,18 @@ type session struct {
 	authClient  *auth.Client
 	dsClient    *downloadstation.Client
 	apiVersions map[string]int
+}
+
+type jsonOutputHandledError struct {
+	err error
+}
+
+func (e *jsonOutputHandledError) Error() string {
+	return e.err.Error()
+}
+
+func (e *jsonOutputHandledError) Unwrap() error {
+	return e.err
 }
 
 var taskAPIRe = regexp.MustCompile(`^SYNO\.DownloadStation(\d*)\.Task$`)
@@ -194,7 +204,7 @@ func (a *appContext) outputError(commandName, endpoint string, start time.Time, 
 		Details: apperr.Details(err),
 	}
 	_ = output.WriteJSON(a.out, env)
-	return err
+	return &jsonOutputHandledError{err: err}
 }
 
 func joinCommand(name ...string) string {
@@ -254,18 +264,4 @@ func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, task
 		taskName, taskPath, taskVersion = best.name, best.path, best.max
 	}
 	return taskName, taskPath, taskVersion
-}
-
-func printTable(w io.Writer, headers []string, rows [][]string) {
-	t := table.New().
-		Headers(headers...).
-		Rows(rows...).
-		BorderRow(false).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return lipgloss.NewStyle().Bold(true)
-			}
-			return lipgloss.NewStyle()
-		})
-	_, _ = fmt.Fprintln(w, t.Render())
 }
