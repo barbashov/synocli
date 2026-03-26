@@ -5,11 +5,26 @@ It currently focuses on Download Station (`ds`) and File Station (`fs`) workflow
 
 ## Quick Start
 
-Build:
+Build natively:
 
 ```bash
 make build
 ./bin/synocli --help
+```
+
+Or build and run via Docker:
+
+```bash
+docker build -t synocli .
+docker run --rm synocli --help
+```
+
+Pass credentials and options as you would with the native binary:
+
+```bash
+docker run --rm \
+  -v "$HOME/.synocli:/root/.synocli:ro" \
+  synocli --endpoint https://192.168.0.1:5001 ds list
 ```
 
 Set reusable shell vars:
