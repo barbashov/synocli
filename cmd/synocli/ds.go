@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -39,11 +37,11 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input := strings.TrimSpace(args[0])
-			kind, err := detectAddInputKind(input)
+			kind, err := downloadstation.DetectAddInputKind(input)
 			if err != nil {
 				return apperr.Wrap("validation_error", "invalid add input", 1, err)
 			}
-			if kind == addInputTorrent {
+			if kind == downloadstation.AddInputTorrent {
 				if err := downloadstation.ValidateTorrentFile(input); err != nil {
 					return apperr.Wrap("validation_error", "invalid torrent file", 1, err)
 				}
@@ -51,9 +49,9 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 			return ac.withSession(cmd, joinCommand("ds", "add"), func(ctx context.Context, s *session) (any, error) {
 				var taskIDs []string
 				switch kind {
-				case addInputTorrent:
+				case downloadstation.AddInputTorrent:
 					taskIDs, err = s.dsClient.AddTorrent(ctx, input, destination)
-				case addInputMagnet, addInputURL:
+				case downloadstation.AddInputMagnet, downloadstation.AddInputURL:
 					taskIDs, err = s.dsClient.AddURI(ctx, input, destination)
 				default:
 					return nil, apperr.New("validation_error", "unsupported input type", 1)
@@ -62,7 +60,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					return nil, err
 				}
 				data := map[string]any{"kind": string(kind), "destination": destination, "task_ids": taskIDs}
-				if kind == addInputTorrent {
+				if kind == downloadstation.AddInputTorrent {
 					data["file"] = input
 				} else {
 					data["uri"] = input
@@ -71,7 +69,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					return data, nil
 				}
 				inputKey := "URI"
-				if kind == addInputTorrent {
+				if kind == downloadstation.AddInputTorrent {
 					inputKey = "File"
 				}
 				printKVBlock(ac.out, "Download Added", []kvField{
@@ -96,36 +94,6 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 	return cmd
 }
 
-type addInputType string
-
-const (
-	addInputURL     addInputType = "url"
-	addInputMagnet  addInputType = "magnet"
-	addInputTorrent addInputType = "torrent"
-)
-
-func detectAddInputKind(input string) (addInputType, error) {
-	lower := strings.ToLower(input)
-	if strings.HasPrefix(lower, "magnet:") {
-		return addInputMagnet, nil
-	}
-	st, err := os.Stat(input)
-	if err == nil {
-		if st.IsDir() {
-			return "", fmt.Errorf("input %q is a directory, expected a torrent file", input)
-		}
-		return addInputTorrent, nil
-	}
-	if !os.IsNotExist(err) {
-		return "", fmt.Errorf("stat input: %w", err)
-	}
-	u, err := url.Parse(input)
-	if err == nil && u.Scheme != "" && !strings.EqualFold(u.Scheme, "magnet") {
-		return addInputURL, nil
-	}
-	return "", fmt.Errorf("cannot detect input type; expected magnet URI, existing torrent file path, or URL with scheme")
-}
-
 func newDSListCmd(ac *appContext) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
@@ -137,7 +105,7 @@ func newDSListCmd(ac *appContext) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				mapped := mapTasks(tasks)
+				mapped := downloadstation.MapTasks(tasks)
 				if ac.opts.JSON {
 					return map[string]any{"tasks": mapped}, nil
 				}
@@ -161,7 +129,7 @@ func newDSGetCmd(ac *appContext) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				mapped := mapTask(*t)
+				mapped := downloadstation.MapTask(*t)
 				if ac.opts.JSON {
 					return mapped, nil
 				}
@@ -257,7 +225,7 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 					}
 					n := downloadstation.NormalizeStatus(task.Status)
 					if downloadstation.IsTerminalSuccess(n) {
-						data := map[string]any{"task": mapTask(*task), "result": "success"}
+						data := map[string]any{"task": downloadstation.MapTask(*task), "result": "success"}
 						if ac.opts.JSON {
 							return data, nil
 						}
@@ -317,11 +285,11 @@ func newDSWatchCmd(ac *appContext) *cobra.Command {
 					if err != nil {
 						return err
 					}
-					filtered := filterTasks(tasks, idSet, statusSet)
+					filtered := downloadstation.FilterTasks(tasks, idSet, statusSet)
 					if ac.opts.JSON {
 						env := output.NewEnvelope(true, joinCommand("ds", "watch"), s.endpoint, s.start)
 						env.Meta.APIVersion = s.apiVersions
-						env.Data = map[string]any{"event": "snapshot", "tasks": mapTasks(filtered)}
+						env.Data = map[string]any{"event": "snapshot", "tasks": downloadstation.MapTasks(filtered)}
 						if err := output.WriteJSONLine(ac.out, env); err != nil {
 							return err
 						}
@@ -354,147 +322,6 @@ func validatePositiveDuration(flagName string, value time.Duration) error {
 	return nil
 }
 
-func filterTasks(tasks []downloadstation.Task, idSet, statusSet map[string]struct{}) []downloadstation.Task {
-	out := make([]downloadstation.Task, 0, len(tasks))
-	for _, t := range tasks {
-		if len(idSet) > 0 {
-			if _, ok := idSet[t.ID]; !ok {
-				continue
-			}
-		}
-		if len(statusSet) > 0 {
-			if _, ok := statusSet[downloadstation.NormalizeStatus(t.Status)]; !ok {
-				continue
-			}
-		}
-		out = append(out, t)
-	}
-	return out
-}
-
-func mapTasks(tasks []downloadstation.Task) []map[string]any {
-	out := make([]map[string]any, 0, len(tasks))
-	for _, t := range tasks {
-		out = append(out, mapTask(t))
-	}
-	return out
-}
-
-func mapTask(t downloadstation.Task) map[string]any {
-	m := map[string]any{
-		"task_id":           t.ID,
-		"title":             t.Title,
-		"normalized_status": downloadstation.NormalizeStatus(t.Status),
-		"raw_status":        t.Status,
-		"status_enum":       downloadstation.StatusEnum(t.Status),
-		"status_display":    downloadstation.StatusDisplay(t.Status),
-		"status_extra":      t.StatusExtra,
-		"type":              t.Type,
-		"username":          t.Username,
-		"destination":       destinationOf(t),
-		"uri":               uriOf(t),
-		"size":              t.Size,
-		"downloaded_size":   downloadedOf(t),
-		"uploaded_size":     uploadedOf(t),
-		"download_speed":    downSpeedOf(t),
-		"upload_speed":      upSpeedOf(t),
-		"created_time":      createdOf(t),
-		"completed_time":    completedOf(t),
-		"error_detail":      errorDetailOf(t),
-		"tracker":           trackerOf(t),
-		"peer":              peerOf(t),
-		"file":              fileOf(t),
-	}
-	if code, ok := downloadstation.StatusCode(t.Status); ok {
-		m["status_code"] = code
-	}
-	return m
-}
-
-func destinationOf(t downloadstation.Task) string {
-	if t.Additional != nil && t.Additional.Detail != nil {
-		return t.Additional.Detail.Destination
-	}
-	return ""
-}
-
-func uriOf(t downloadstation.Task) string {
-	if t.Additional != nil && t.Additional.Detail != nil {
-		return t.Additional.Detail.URI
-	}
-	return ""
-}
-
-func createdOf(t downloadstation.Task) int64 {
-	if t.Additional != nil && t.Additional.Detail != nil {
-		return t.Additional.Detail.CreateTime
-	}
-	return 0
-}
-
-func completedOf(t downloadstation.Task) int64 {
-	if t.Additional != nil && t.Additional.Detail != nil {
-		return t.Additional.Detail.CompletedTime
-	}
-	return 0
-}
-
-func errorDetailOf(t downloadstation.Task) string {
-	if t.Additional != nil && t.Additional.Detail != nil {
-		return t.Additional.Detail.ErrorDetail
-	}
-	return ""
-}
-
-func downloadedOf(t downloadstation.Task) int64 {
-	if t.Additional != nil && t.Additional.Transfer != nil {
-		return t.Additional.Transfer.SizeDownloaded
-	}
-	return 0
-}
-
-func uploadedOf(t downloadstation.Task) int64 {
-	if t.Additional != nil && t.Additional.Transfer != nil {
-		return t.Additional.Transfer.SizeUploaded
-	}
-	return 0
-}
-
-func downSpeedOf(t downloadstation.Task) int64 {
-	if t.Additional != nil && t.Additional.Transfer != nil {
-		return t.Additional.Transfer.SpeedDownload
-	}
-	return 0
-}
-
-func upSpeedOf(t downloadstation.Task) int64 {
-	if t.Additional != nil && t.Additional.Transfer != nil {
-		return t.Additional.Transfer.SpeedUpload
-	}
-	return 0
-}
-
-func trackerOf(t downloadstation.Task) any {
-	if t.Additional != nil {
-		return t.Additional.Tracker
-	}
-	return nil
-}
-
-func peerOf(t downloadstation.Task) any {
-	if t.Additional != nil {
-		return t.Additional.Peer
-	}
-	return nil
-}
-
-func fileOf(t downloadstation.Task) any {
-	if t.Additional != nil {
-		return t.Additional.File
-	}
-	return nil
-}
-
 func printTaskDetail(w io.Writer, t downloadstation.Task) {
 	ui := newHumanUI(w)
 	printKVBlock(w, "Task Detail", []kvField{
@@ -502,14 +329,14 @@ func printTaskDetail(w io.Writer, t downloadstation.Task) {
 		{Label: "Title", Value: t.Title},
 		{Label: "Status", Value: ui.status(downloadstation.StatusDisplay(t.Status), downloadstation.NormalizeStatus(t.Status))},
 		{Label: "Type", Value: t.Type},
-		{Label: "Destination", Value: valueOrDash(destinationOf(t))},
+		{Label: "Destination", Value: valueOrDash(downloadstation.DestinationOf(t))},
 		{Label: "Size", Value: formatBytes(t.Size)},
-		{Label: "Downloaded", Value: formatBytes(downloadedOf(t))},
-		{Label: "Progress", Value: formatPercent(downloadedOf(t), t.Size)},
-		{Label: "Uploaded", Value: formatBytes(uploadedOf(t))},
-		{Label: "Down Speed", Value: formatSpeed(downSpeedOf(t))},
-		{Label: "Up Speed", Value: formatSpeed(upSpeedOf(t))},
-		{Label: "URI", Value: valueOrDash(uriOf(t))},
+		{Label: "Downloaded", Value: formatBytes(downloadstation.DownloadedOf(t))},
+		{Label: "Progress", Value: formatPercent(downloadstation.DownloadedOf(t), t.Size)},
+		{Label: "Uploaded", Value: formatBytes(downloadstation.UploadedOf(t))},
+		{Label: "Down Speed", Value: formatSpeed(downloadstation.DownSpeedOf(t))},
+		{Label: "Up Speed", Value: formatSpeed(downloadstation.UpSpeedOf(t))},
+		{Label: "URI", Value: valueOrDash(downloadstation.URIOf(t))},
 		{Label: "Status Extra", Value: valueOrDash(t.StatusExtra)},
 	})
 }
@@ -537,13 +364,13 @@ func printTaskTable(w io.Writer, tasks []downloadstation.Task) {
 			t.Title,
 			ui.status(downloadstation.StatusDisplay(t.Status), downloadstation.NormalizeStatus(t.Status)),
 			t.Type,
-			valueOrDash(destinationOf(t)),
+			valueOrDash(downloadstation.DestinationOf(t)),
 			formatBytes(t.Size),
-			formatBytes(downloadedOf(t)),
-			formatPercent(downloadedOf(t), t.Size),
-			formatBytes(uploadedOf(t)),
-			formatSpeed(downSpeedOf(t)),
-			formatSpeed(upSpeedOf(t)),
+			formatBytes(downloadstation.DownloadedOf(t)),
+			formatPercent(downloadstation.DownloadedOf(t), t.Size),
+			formatBytes(downloadstation.UploadedOf(t)),
+			formatSpeed(downloadstation.DownSpeedOf(t)),
+			formatSpeed(downloadstation.UpSpeedOf(t)),
 		})
 	}
 	printTable(w, []string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "Up Speed"}, rows)

@@ -3,13 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
-	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -72,8 +69,8 @@ func newFSInfoCmd(ac *appContext) *cobra.Command {
 					return out, nil
 				}
 				printKVBlock(ac.out, "File Station", []kvField{
-					{Label: "Hostname", Value: valueFromMap(out, "hostname")},
-					{Label: "Is Manager", Value: valueFromMap(out, "is_manager")},
+					{Label: "Hostname", Value: filestation.ValueFromMap(out, "hostname")},
+					{Label: "Is Manager", Value: filestation.ValueFromMap(out, "is_manager")},
 				})
 				return nil, nil
 			})
@@ -100,10 +97,10 @@ func newFSSharesCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return out, nil
 				}
-				shares := mapSliceAny(out["shares"])
+				shares := filestation.MapSliceAny(out["shares"])
 				rows := make([][]string, 0, len(shares))
 				for _, sh := range shares {
-					rows = append(rows, []string{valueFromMap(sh, "name"), valueFromMap(sh, "path")})
+					rows = append(rows, []string{filestation.ValueFromMap(sh, "name"), filestation.ValueFromMap(sh, "path")})
 				}
 				printKVBlock(ac.out, "Shares", []kvField{{Label: "Count", Value: fmt.Sprintf("%d", len(shares))}})
 				printTable(ac.out, []string{"Name", "Path"}, rows)
@@ -155,12 +152,12 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return out, nil
 				}
-				files := mapSliceAny(out["files"])
+				files := filestation.MapSliceAny(out["files"])
 				rows := make([][]string, 0, len(files))
 				for _, f := range files {
 					rows = append(rows, []string{
-						valueFromMap(f, "name"),
-						valueFromMap(f, "path"),
+						filestation.ValueFromMap(f, "name"),
+						filestation.ValueFromMap(f, "path"),
 						fsListSizeDisplay(f),
 						fsListMTimeDisplay(f),
 					})
@@ -209,11 +206,11 @@ func newFSGetCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return out, nil
 				}
-				files := mapSliceAny(out["files"])
+				files := filestation.MapSliceAny(out["files"])
 				rows := make([][]string, 0, len(files))
 				for _, f := range files {
 					size := fsListSizeDisplay(f)
-					rows = append(rows, []string{valueFromMap(f, "path"), valueFromMap(f, "name"), valueFromMap(f, "isdir"), size})
+					rows = append(rows, []string{filestation.ValueFromMap(f, "path"), filestation.ValueFromMap(f, "name"), filestation.ValueFromMap(f, "isdir"), size})
 				}
 				printTable(ac.out, []string{"Path", "Name", "Dir", "Size"}, rows)
 				return nil, nil
@@ -311,7 +308,7 @@ func newFSCopyCmd(ac *appContext, move bool) *cobra.Command {
 				return err
 			}
 			return ac.withFSSession(cmd, joinCommand("fs", verb), func(ctx context.Context, s *session) (any, error) {
-				if err := ensureRemoteDir(ctx, s.fsClient, dest); err != nil {
+				if err := s.fsClient.EnsureDir(ctx, dest); err != nil {
 					return nil, err
 				}
 				pathsJSON, err := filestation.EncodeJSON(args)
@@ -329,12 +326,12 @@ func newFSCopyCmd(ac *appContext, move bool) *cobra.Command {
 				if err := s.fsClient.Call(ctx, filestation.APICopyMove, "start", params, &out); err != nil {
 					return nil, err
 				}
-				taskID := firstTaskID(out)
+				taskID := filestation.FirstTaskID(out)
 				if taskID == "" {
 					return nil, apperr.New("internal_error", "copy/move task id missing", 1)
 				}
 				if !async {
-					status, err := waitFSTask(ctx, s.fsClient, filestation.APICopyMove, taskID, interval, maxWait)
+					status, err := s.fsClient.WaitTask(ctx, filestation.APICopyMove, taskID, interval, maxWait)
 					if err != nil {
 						return nil, err
 					}
@@ -378,7 +375,7 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 				return err
 			}
 			return ac.withFSSession(cmd, joinCommand("fs", "delete"), func(ctx context.Context, s *session) (any, error) {
-				if err := ensureDeleteSafety(ctx, s.fsClient, args, recursive); err != nil {
+				if err := s.fsClient.EnsureDeleteSafety(ctx, args, recursive); err != nil {
 					return nil, err
 				}
 				pathsJSON, err := filestation.EncodeJSON(args)
@@ -406,13 +403,13 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 				if out == nil {
 					out = map[string]any{}
 				}
-				taskID := firstTaskID(out)
+				taskID := filestation.FirstTaskID(out)
 				if taskID == "" {
 					return nil, apperr.New("internal_error", "delete task id missing", 1)
 				}
 				out["task_id"] = taskID
 				if !async {
-					status, err := waitFSTask(ctx, s.fsClient, filestation.APIDelete, taskID, interval, maxWait)
+					status, err := s.fsClient.WaitTask(ctx, filestation.APIDelete, taskID, interval, maxWait)
 					if err != nil {
 						return nil, err
 					}
@@ -452,7 +449,7 @@ func newFSUploadCmd(ac *appContext) *cobra.Command {
 					return nil, fmt.Errorf("stat local path: %w", err)
 				}
 				if st.IsDir() {
-					res, err := uploadRecursiveCP(ctx, s.fsClient, args[0], args[1], parents, overwrite, skipExisting)
+					res, err := s.fsClient.UploadRecursiveCP(ctx, args[0], args[1], parents, overwrite, skipExisting)
 					if err != nil {
 						return nil, err
 					}
@@ -462,7 +459,7 @@ func newFSUploadCmd(ac *appContext) *cobra.Command {
 					printKVBlock(ac.out, "Upload Directory", []kvField{{Label: "Local", Value: args[0]}, {Label: "Remote", Value: args[1]}, {Label: "Files", Value: fmt.Sprintf("%v", res["uploaded_files"])}})
 					return nil, nil
 				}
-				res, err := uploadOne(ctx, s.fsClient, args[0], args[1], parents, overwrite, skipExisting)
+				res, err := s.fsClient.UploadOne(ctx, args[0], args[1], parents, overwrite, skipExisting)
 				if err != nil {
 					return nil, err
 				}
@@ -558,13 +555,13 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 				if err := s.fsClient.Call(ctx, filestation.APISearch, "start", params, &out); err != nil {
 					return nil, err
 				}
-				taskID := firstTaskID(out)
+				taskID := filestation.FirstTaskID(out)
 				if taskID == "" {
 					return nil, apperr.New("internal_error", "search task id missing", 1)
 				}
 				res := map[string]any{"task_id": taskID}
 				if !async {
-					snapshot, err := waitSearch(ctx, s.fsClient, taskID, interval, maxWait)
+					snapshot, err := s.fsClient.WaitSearch(ctx, taskID, interval, maxWait)
 					if err != nil {
 						return nil, err
 					}
@@ -603,10 +600,10 @@ func newFSSearchResultsCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return out, nil
 				}
-				files := mapSliceAny(out["files"])
+				files := filestation.MapSliceAny(out["files"])
 				rows := make([][]string, 0, len(files))
 				for _, f := range files {
-					rows = append(rows, []string{valueFromMap(f, "path"), valueFromMap(f, "name")})
+					rows = append(rows, []string{filestation.ValueFromMap(f, "path"), filestation.ValueFromMap(f, "name")})
 				}
 				printTable(ac.out, []string{"Path", "Name"}, rows)
 				return nil, nil
@@ -682,12 +679,12 @@ func newTaskStartCmd(ac *appContext, apiKey, cmdName, title, method string, para
 				if err := s.fsClient.Call(ctx, apiKey, method, params, &out); err != nil {
 					return nil, err
 				}
-				taskID := firstTaskID(out)
+				taskID := filestation.FirstTaskID(out)
 				if taskID == "" {
 					return nil, apperr.New("internal_error", "task id missing", 1)
 				}
 				if !async {
-					status, err := waitFSTask(ctx, s.fsClient, apiKey, taskID, interval, maxWait)
+					status, err := s.fsClient.WaitTask(ctx, apiKey, taskID, interval, maxWait)
 					if err != nil {
 						return nil, err
 					}
@@ -722,7 +719,7 @@ func newTaskStatusCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Comm
 				if ac.opts.JSON {
 					return out, nil
 				}
-				printKVBlock(ac.out, title, []kvField{{Label: "Task ID", Value: args[0]}, {Label: "Finished", Value: valueFromMap(out, "finished")}})
+				printKVBlock(ac.out, title, []kvField{{Label: "Task ID", Value: args[0]}, {Label: "Finished", Value: filestation.ValueFromMap(out, "finished")}})
 				return nil, nil
 			})
 		},
@@ -1018,10 +1015,10 @@ func newFSWatchFolderCmd(ac *appContext) *cobra.Command {
 							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
 						}
 						printKVBlock(ac.out, "File Station Folder Watch", []kvField{{Label: "Timestamp", Value: time.Now().Format(time.RFC3339)}, {Label: "Path", Value: args[0]}})
-						files := mapSliceAny(out["files"])
+						files := filestation.MapSliceAny(out["files"])
 						rows := make([][]string, 0, len(files))
 						for _, f := range files {
-							rows = append(rows, []string{valueFromMap(f, "name"), valueFromMap(f, "path"), valueFromMap(f, "isdir")})
+							rows = append(rows, []string{filestation.ValueFromMap(f, "name"), filestation.ValueFromMap(f, "path"), filestation.ValueFromMap(f, "isdir")})
 						}
 						printTable(ac.out, []string{"Name", "Path", "Dir"}, rows)
 					}
@@ -1065,325 +1062,6 @@ func makeValuesFromMap(m map[string]string) mapValues {
 	return v
 }
 
-func firstTaskID(m map[string]any) string {
-	for _, key := range []string{"taskid", "task_id", "taskId"} {
-		if v, ok := m[key]; ok {
-			s := firstString(v)
-			if s != "" {
-				return s
-			}
-		}
-	}
-	return ""
-}
-
-func firstString(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []any:
-		for _, item := range t {
-			if s, ok := item.(string); ok && s != "" {
-				return s
-			}
-		}
-	case []string:
-		for _, s := range t {
-			if s != "" {
-				return s
-			}
-		}
-	}
-	return ""
-}
-
-func waitFSTask(ctx context.Context, c *filestation.Client, apiKey, taskID string, interval, maxWait time.Duration) (map[string]any, error) {
-	deadline := time.Time{}
-	if maxWait > 0 {
-		deadline = time.Now().Add(maxWait)
-	}
-	for {
-		var out map[string]any
-		if err := c.Call(ctx, apiKey, "status", makeValues("taskid", taskID), &out); err != nil {
-			return nil, err
-		}
-		if isFinished(out) {
-			return out, nil
-		}
-		if !deadline.IsZero() && time.Now().After(deadline) {
-			return nil, apperr.New("timeout", "timeout waiting for task", 5)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(interval):
-		}
-	}
-}
-
-func waitSearch(ctx context.Context, c *filestation.Client, taskID string, interval, maxWait time.Duration) (map[string]any, error) {
-	deadline := time.Time{}
-	if maxWait > 0 {
-		deadline = time.Now().Add(maxWait)
-	}
-	for {
-		var out map[string]any
-		if err := c.Call(ctx, filestation.APISearch, "list", makeValues("taskid", taskID, "offset", "0", "limit", "1000"), &out); err != nil {
-			return nil, err
-		}
-		if isFinished(out) {
-			return out, nil
-		}
-		if !deadline.IsZero() && time.Now().After(deadline) {
-			return nil, apperr.New("timeout", "timeout waiting for search", 5)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(interval):
-		}
-	}
-}
-
-func isFinished(out map[string]any) bool {
-	if b, ok := out["finished"].(bool); ok {
-		return b
-	}
-	if s, ok := out["status"].(string); ok {
-		s = strings.ToLower(s)
-		return s == "finished" || s == "done" || s == "success"
-	}
-	if p, ok := out["progress"].(float64); ok {
-		return p >= 100
-	}
-	return false
-}
-
-func valueFromMap(m map[string]any, k string) string {
-	if v, ok := m[k]; ok {
-		return fmt.Sprintf("%v", v)
-	}
-	return ""
-}
-
-func mapSliceAny(v any) []map[string]any {
-	items, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]map[string]any, 0, len(items))
-	for _, item := range items {
-		if m, ok := item.(map[string]any); ok {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-func ensureDeleteSafety(ctx context.Context, c *filestation.Client, paths []string, recursive bool) error {
-	if recursive {
-		return nil
-	}
-	j, err := filestation.EncodeJSON(paths)
-	if err != nil {
-		return err
-	}
-	var out map[string]any
-	if err := c.Call(ctx, filestation.APIList, "getinfo", makeValues("path", j, "additional", `["type"]`), &out); err != nil {
-		return err
-	}
-	for _, file := range mapSliceAny(out["files"]) {
-		if isDir, ok := file["isdir"].(bool); ok && isDir {
-			return apperr.New("validation_error", "directory deletion requires --recursive/-r", 1)
-		}
-	}
-	return nil
-}
-
-func uploadOne(ctx context.Context, c *filestation.Client, localPath, remotePath string, parents, overwrite, skipExisting bool) (map[string]any, error) {
-	params, err := uploadParams(ctx, c, remotePath, parents, overwrite, skipExisting)
-	if err != nil {
-		return nil, err
-	}
-	out, err := c.Upload(ctx, params, localPath)
-	if err != nil {
-		return nil, err
-	}
-	out["local_path"] = localPath
-	out["remote_path"] = remotePath
-	return out, nil
-}
-
-func uploadRecursiveCP(ctx context.Context, c *filestation.Client, localDir, remotePath string, parents, overwrite, skipExisting bool) (map[string]any, error) {
-	exists, isDir, err := remoteExists(ctx, c, remotePath)
-	if err != nil {
-		return nil, err
-	}
-	if exists && !isDir {
-		return nil, apperr.New("validation_error", "remote destination exists and is not a directory", 1)
-	}
-	targetRoot := remotePath
-	if exists && isDir {
-		targetRoot = joinRemote(remotePath, filepath.Base(localDir))
-	}
-	if err := ensureRemoteDir(ctx, c, targetRoot); err != nil {
-		return nil, err
-	}
-	uploaded := 0
-	skipped := 0
-	err = filepath.WalkDir(localDir, func(p string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(localDir, p)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil
-		}
-		remoteCurrent := joinRemote(targetRoot, filepath.ToSlash(rel))
-		if d.IsDir() {
-			return ensureRemoteDir(ctx, c, remoteCurrent)
-		}
-		parent := path.Dir(remoteCurrent)
-		if skipExisting {
-			ex, _, err := remoteExists(ctx, c, remoteCurrent)
-			if err != nil {
-				return err
-			}
-			if ex {
-				skipped++
-				return nil
-			}
-		}
-		params, err := uploadParams(ctx, c, parent, parents, overwrite, skipExisting)
-		if err != nil {
-			return err
-		}
-		// Upload may succeed server-side but return an error (e.g. malformed
-		// response). If the file landed under its local name we can still
-		// rename it to the intended remote name, so only propagate the
-		// upload error when the rename fallback also fails.
-		if _, err := c.Upload(ctx, params, p); err != nil {
-			if renameErr := renameUploadedFile(ctx, c, parent, filepath.Base(p), path.Base(remoteCurrent)); renameErr != nil {
-				return err
-			}
-		}
-		if filepath.Base(p) != path.Base(remoteCurrent) {
-			if err := renameUploadedFile(ctx, c, parent, filepath.Base(p), path.Base(remoteCurrent)); err != nil {
-				return err
-			}
-		}
-		uploaded++
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"local_path": localDir, "remote_path": targetRoot, "uploaded_files": uploaded, "skipped_files": skipped}, nil
-}
-
-func renameUploadedFile(ctx context.Context, c *filestation.Client, parent, oldName, newName string) error {
-	if oldName == newName {
-		return nil
-	}
-	p := joinRemote(parent, oldName)
-	pj, err := filestation.EncodeJSON([]string{p})
-	if err != nil {
-		return err
-	}
-	nj, err := filestation.EncodeJSON([]string{newName})
-	if err != nil {
-		return err
-	}
-	return c.Call(ctx, filestation.APIRename, "rename", makeValues("path", pj, "name", nj), nil)
-}
-
-func uploadParams(ctx context.Context, c *filestation.Client, remoteDir string, parents, overwrite, skipExisting bool) (map[string]string, error) {
-	api := c.API(filestation.APIUpload)
-	params := map[string]string{"path": remoteDir, "create_parents": fmt.Sprintf("%t", parents)}
-	if api.Version >= 3 {
-		switch {
-		case overwrite:
-			params["overwrite"] = "overwrite"
-		case skipExisting:
-			params["overwrite"] = "skip"
-		default:
-			params["overwrite"] = "error"
-		}
-		return params, nil
-	}
-	if overwrite {
-		params["overwrite"] = "true"
-	} else {
-		params["overwrite"] = "false"
-	}
-	// Version 2 API has only bool overwrite; skip is handled by caller for recursive mode.
-	return params, nil
-}
-
-func remoteExists(ctx context.Context, c *filestation.Client, remotePath string) (bool, bool, error) {
-	j, err := filestation.EncodeJSON([]string{remotePath})
-	if err != nil {
-		return false, false, err
-	}
-	var out map[string]any
-	err = c.Call(ctx, filestation.APIList, "getinfo", makeValues("path", j), &out)
-	if err != nil {
-		var apiErr *filestation.APIError
-		if errors.As(err, &apiErr) && (apiErr.Code == 408 || apiErr.SubCode == 408) {
-			return false, false, nil
-		}
-		return false, false, err
-	}
-	files := mapSliceAny(out["files"])
-	if len(files) == 0 {
-		return false, false, nil
-	}
-	if code, ok := int64FromAny(files[0]["code"]); ok && code == 408 {
-		return false, false, nil
-	}
-	isDir := false
-	if v, ok := files[0]["isdir"].(bool); ok {
-		isDir = v
-	} else if v, ok := files[0]["isdir"].(string); ok {
-		isDir = v == "true" || v == "1"
-	}
-	return true, isDir, nil
-}
-
-func ensureRemoteDir(ctx context.Context, c *filestation.Client, dir string) error {
-	if dir == "" || dir == "/" {
-		return nil
-	}
-	exists, isDir, err := remoteExists(ctx, c, dir)
-	if err != nil {
-		return err
-	}
-	if exists {
-		if !isDir {
-			return apperr.New("validation_error", fmt.Sprintf("remote path exists and is not dir: %s", dir), 1)
-		}
-		return nil
-	}
-	parent := path.Dir(dir)
-	name := path.Base(dir)
-	nameJSON, err := filestation.EncodeJSON([]string{name})
-	if err != nil {
-		return err
-	}
-	return c.Call(ctx, filestation.APICreateFolder, "create", makeValues("folder_path", parent, "name", nameJSON, "force_parent", "true"), nil)
-}
-
-func joinRemote(base, elem string) string {
-	base = strings.TrimSuffix(base, "/")
-	if !strings.HasPrefix(base, "/") {
-		base = "/" + base
-	}
-	return path.Clean(base + "/" + strings.TrimPrefix(filepath.ToSlash(elem), "/"))
-}
-
 func capitalizeWord(s string) string {
 	if s == "" {
 		return s
@@ -1392,10 +1070,10 @@ func capitalizeWord(s string) string {
 }
 
 func printBackgroundTasks(w io.Writer, out map[string]any) {
-	tasks := mapSliceAny(out["tasks"])
+	tasks := filestation.MapSliceAny(out["tasks"])
 	rows := make([][]string, 0, len(tasks))
 	for _, t := range tasks {
-		rows = append(rows, []string{valueFromMap(t, "taskid"), valueFromMap(t, "api"), valueFromMap(t, "status"), valueFromMap(t, "progress")})
+		rows = append(rows, []string{filestation.ValueFromMap(t, "taskid"), filestation.ValueFromMap(t, "api"), filestation.ValueFromMap(t, "status"), filestation.ValueFromMap(t, "progress")})
 	}
 	printKVBlock(w, "Background Tasks", []kvField{{Label: "Count", Value: fmt.Sprintf("%d", len(tasks))}})
 	printTable(w, []string{"Task ID", "API", "Status", "Progress"}, rows)
@@ -1436,11 +1114,11 @@ func fsFileIsDir(file map[string]any) bool {
 }
 
 func fsFileSize(file map[string]any) int64 {
-	if n, ok := int64FromAny(file["size"]); ok {
+	if n, ok := filestation.Int64FromAny(file["size"]); ok {
 		return n
 	}
 	if additional, ok := file["additional"].(map[string]any); ok {
-		if n, ok := int64FromAny(additional["size"]); ok {
+		if n, ok := filestation.Int64FromAny(additional["size"]); ok {
 			return n
 		}
 	}
@@ -1448,43 +1126,20 @@ func fsFileSize(file map[string]any) int64 {
 }
 
 func fsFileMTime(file map[string]any) int64 {
-	if n, ok := int64FromAny(file["mtime"]); ok {
+	if n, ok := filestation.Int64FromAny(file["mtime"]); ok {
 		return n
 	}
 	if additional, ok := file["additional"].(map[string]any); ok {
 		if tm, ok := additional["time"].(map[string]any); ok {
-			if n, ok := int64FromAny(tm["mtime"]); ok {
+			if n, ok := filestation.Int64FromAny(tm["mtime"]); ok {
 				return n
 			}
 		}
 	}
 	if tm, ok := file["time"].(map[string]any); ok {
-		if n, ok := int64FromAny(tm["mtime"]); ok {
+		if n, ok := filestation.Int64FromAny(tm["mtime"]); ok {
 			return n
 		}
 	}
 	return 0
-}
-
-func int64FromAny(v any) (int64, bool) {
-	switch t := v.(type) {
-	case int64:
-		return t, true
-	case int:
-		return int64(t), true
-	case float64:
-		return int64(t), true
-	case json.Number:
-		n, err := t.Int64()
-		if err == nil {
-			return n, true
-		}
-	case string:
-		var n int64
-		_, err := fmt.Sscanf(strings.TrimSpace(t), "%d", &n)
-		if err == nil {
-			return n, true
-		}
-	}
-	return 0, false
 }
