@@ -71,7 +71,7 @@ password=secret
 - `synocli ds add <input> [--destination <folder>]`
 - `synocli ds pause <task-id> [<task-id>...]`
 - `synocli ds resume <task-id> [<task-id>...]`
-- `synocli ds delete <task-id> [<task-id>...] [--with-data]`
+- `synocli ds delete <task-id> [<task-id>...]`
 - `synocli ds wait <task-id> [--interval <duration>] [--max-wait <duration>]`
 - `synocli ds watch [--interval <duration>] [--id <task-id>]... [--status <normalized>]...`
 

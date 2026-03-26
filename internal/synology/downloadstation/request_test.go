@@ -47,6 +47,25 @@ func TestPauseBuildsExpectedQuery(t *testing.T) {
 	}
 }
 
+func TestDeleteBuildsExpectedQueryWithoutForceComplete(t *testing.T) {
+	var rawQuery string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer ts.Close()
+	c := newV1TestClient(t, ts.URL, "sid123", ts.Client())
+	if err := c.Delete(context.Background(), []string{"a", "b"}); err != nil {
+		t.Fatalf("Delete error: %v", err)
+	}
+	if !strings.Contains(rawQuery, "method=delete") || !strings.Contains(rawQuery, "id=a%2Cb") || !strings.Contains(rawQuery, "_sid=sid123") {
+		t.Fatalf("unexpected query: %s", rawQuery)
+	}
+	if strings.Contains(rawQuery, "force_complete=") {
+		t.Fatalf("force_complete must not be set: %s", rawQuery)
+	}
+}
+
 func TestListIncludesUnlimitedPaging(t *testing.T) {
 	var rawQuery string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

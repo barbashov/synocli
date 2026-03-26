@@ -2,7 +2,6 @@ package downloadstation
 
 import (
 	"context"
-	"strconv"
 	"strings"
 )
 
@@ -20,10 +19,9 @@ func (c *Client) Resume(ctx context.Context, ids []string) error {
 	return c.doGETAction(ctx, vals)
 }
 
-func (c *Client) Delete(ctx context.Context, ids []string, withData bool) error {
+func (c *Client) Delete(ctx context.Context, ids []string) error {
 	vals := c.baseValues()
 	vals.Set("method", "delete")
 	vals.Set("id", strings.Join(ids, ","))
-	vals.Set("force_complete", strconv.FormatBool(withData))
 	return c.doGETAction(ctx, vals)
 }

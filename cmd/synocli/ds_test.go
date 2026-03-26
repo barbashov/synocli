@@ -38,6 +38,19 @@ func TestDSCommandAliases(t *testing.T) {
 	}
 }
 
+func TestDSDeleteRejectsWithDataFlag(t *testing.T) {
+	ac := &appContext{}
+	cmd := newDSDeleteCmd(ac)
+	cmd.SetArgs([]string{"dbid_1", "--with-data"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "unknown flag: --with-data") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestWaitRejectsNonPositiveInterval(t *testing.T) {
 	tests := []string{"0s", "-1s"}
 	for _, interval := range tests {

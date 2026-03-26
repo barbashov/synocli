@@ -266,10 +266,43 @@ register_task_id() {
   printf '%s\n' "$task_id" >> "$STATE_FILE"
 }
 
+json_extract_inferred_download_path() {
+  python3 -c 'import json,sys
+obj=json.load(sys.stdin)
+data=obj.get("data") or {}
+dest=(data.get("destination") or "").strip()
+title=(data.get("title") or "").strip()
+if not title:
+    raise SystemExit("missing task title for inferred cleanup path")
+if "/" in title or "\\" in title:
+    raise SystemExit(f"unsafe task title for inferred cleanup path: {title!r}")
+dest=dest.strip("/")
+if dest:
+    print(f"/{dest}/{title}")
+else:
+    print(f"/{title}")'
+}
+
+resolve_task_data_path_best_effort() {
+  local tid="$1"
+  local out
+  out="$(run_json_capture "$BIN" ds get "$tid" --json "${COMMON_ARGS[@]}")" || return 1
+  printf '%s\n' "$out" | json_extract_inferred_download_path
+}
+
+cleanup_data_path_best_effort() {
+  local path="$1"
+  [[ -n "$path" ]] || return 0
+  "$BIN" fs delete "$path" --recursive --json "${COMMON_ARGS[@]}" >/dev/null 2>&1 || true
+}
+
 cleanup_task_id_best_effort() {
   local tid="$1"
+  local inferred_path=""
   [[ -n "$tid" ]] || return
-  "$BIN" ds delete "$tid" --with-data --json "${COMMON_ARGS[@]}" >/dev/null 2>&1 || true
+  inferred_path="$(resolve_task_data_path_best_effort "$tid" 2>/dev/null || true)"
+  "$BIN" ds delete "$tid" --json "${COMMON_ARGS[@]}" >/dev/null 2>&1 || true
+  cleanup_data_path_best_effort "$inferred_path"
 }
 
 cleanup_stale_state_tasks() {
@@ -422,19 +455,12 @@ assert_task_deleted() {
   return 1
 }
 
-delete_task_with_data_fallback() {
+delete_task_and_cleanup_strict() {
   local task_id="$1"
-  local out
-  if out="$(run_json_capture "$BIN" ds delete "$task_id" --with-data --json "${COMMON_ARGS[@]}")"; then
-    printf '%s\n' "$out" | json_assert_envelope
-    return 0
-  fi
-  if ! printf '%s\n' "$out" | json_assert_synology_code_405; then
-    echo "Delete --with-data failed with unexpected payload for $task_id:" >&2
-    printf '%s\n' "$out" >&2
-    return 1
-  fi
+  local inferred_path=""
+  inferred_path="$(resolve_task_data_path_best_effort "$task_id" 2>/dev/null || true)"
   run_json_capture "$BIN" ds delete "$task_id" --json "${COMMON_ARGS[@]}" | json_assert_envelope
+  cleanup_data_path_best_effort "$inferred_path"
 }
 
 json_extract_normalized_status() {
@@ -557,12 +583,12 @@ main() {
   watch_json_line="$(capture_watch_snapshot_line "$BIN" ds watch --json --interval 1s --id "$paused_task_id" "${COMMON_ARGS[@]}")"
   printf '%s\n' "$watch_json_line" | json_assert_watch_snapshot
 
-  run_json_capture "$BIN" ds delete "$paused_task_id" --json "${COMMON_ARGS[@]}" | json_assert_envelope
+  delete_task_and_cleanup_strict "$paused_task_id"
   if [[ "$url_task_id" != "$paused_task_id" ]]; then
-    delete_task_with_data_fallback "$url_task_id"
+    delete_task_and_cleanup_strict "$url_task_id"
   fi
   if [[ "$torrent_task_id" != "$paused_task_id" ]]; then
-    delete_task_with_data_fallback "$torrent_task_id"
+    delete_task_and_cleanup_strict "$torrent_task_id"
   fi
 
   assert_task_deleted "$magnet_task_id"

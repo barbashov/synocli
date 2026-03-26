@@ -185,7 +185,6 @@ func newDSResumeCmd(ac *appContext) *cobra.Command {
 }
 
 func newDSDeleteCmd(ac *appContext) *cobra.Command {
-	var withData bool
 	cmd := &cobra.Command{
 		Use:   "delete <task-id> [<task-id>...]",
 		Short: "Delete tasks",
@@ -193,22 +192,20 @@ func newDSDeleteCmd(ac *appContext) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ids := args
 			return ac.withSession(cmd, joinCommand("ds", "delete"), func(ctx context.Context, s *session) (any, error) {
-				if err := s.dsClient.Delete(ctx, ids, withData); err != nil {
+				if err := s.dsClient.Delete(ctx, ids); err != nil {
 					return nil, err
 				}
-				data := map[string]any{"task_ids": ids, "with_data": withData}
+				data := map[string]any{"task_ids": ids}
 				if ac.opts.JSON {
 					return data, nil
 				}
 				printKVBlock(ac.out, "Delete", []kvField{
 					{Label: "Task IDs", Value: strings.Join(ids, ", ")},
-					{Label: "With Data", Value: fmt.Sprintf("%t", withData)},
 				})
 				return nil, nil
 			})
 		},
 	}
-	cmd.Flags().BoolVar(&withData, "with-data", false, "Delete task and downloaded data")
 	return cmd
 }
 
