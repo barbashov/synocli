@@ -1,39 +1,47 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `cmd/synocli`: Cobra CLI entrypoint and command handlers (`auth`, `ds`, formatting/human output).
-- `internal/`: reusable packages by concern: `synology/` (API discovery/auth/Download Station), `httpclient/`, `config/`, `output/`, `redact/`, `apperr/`.
-- `docs/architecture.md`: high-level design and extension pattern for new DSM modules.
-- `bin/`: local build artifacts (for example `bin/synocli`).
+## Project Overview
+CLI client for Synology DSM APIs (Download Station, File Station). Built with Go and Cobra.
+
+## Project Structure
+- `cmd/synocli/` — CLI entrypoint, Cobra commands (`auth`, `ds`, `fs`, `cli-config`), human-readable output formatting.
+- `internal/synology/` — DSM API clients by module: `apiinfo` (discovery), `auth` (session login/logout), `downloadstation` (task CRUD, torrent handling), `filestation` (files, search, archive, background tasks).
+- `internal/apperr/` — structured errors with exit codes.
+- `internal/config/` — endpoint validation, config file parsing, credential resolution.
+- `internal/httpclient/` — shared HTTP client with TLS, cookie jar, debug transport.
+- `internal/output/` — JSON envelope for machine-readable output.
+- `internal/redact/` — sensitive field redaction for debug logs.
+- `tests_e2e/` — shell-based e2e tests requiring a real Synology NAS.
 
 Keep CLI wiring in `cmd/` and protocol/domain logic in `internal/`.
 
-## Build, Test, and Development Commands
-- `make build`: builds `./cmd/synocli` with `CGO_ENABLED=0` into `bin/synocli`.
-- `make test`: runs all unit tests (`go test ./...`).
-- `make lint`: runs `golangci-lint` in Docker with repo-mounted source.
-- `docker build .`: validates container build used in CI.
+## Build, Test, and Lint
+```
+make build     # CGO_ENABLED=0, outputs bin/synocli
+make test      # go test ./...
+make lint      # golangci-lint v2.11 via Docker
+docker build . # multi-stage alpine image
+```
 
-Run `make test` and `make lint` before opening a PR.
+Run `make test` and `make lint` before committing.
 
-## Coding Style & Naming Conventions
-- Target Go `1.26` and keep code `gofmt`-clean.
-- Use idiomatic Go names: exported `CamelCase`, unexported `lowerCamel`, package names lowercase.
-- Test files use `*_test.go`; test funcs follow `TestXxx` and table tests with `t.Run(...)` where helpful.
-- Prefer small, focused functions and typed request/response models in `internal/synology/...`.
+## E2E Tests
+Require a live Synology NAS. Not part of CI. Always ask the user for endpoint, credentials file, and options before running.
+```
+tests_e2e/filestation.sh --endpoint <url> --credentials-file <path> [--base <path>] [--insecure-tls]
+tests_e2e/downloadstation.sh --endpoint <url> --credentials-file <path> [--insecure-tls]
+```
 
-## Testing Guidelines
-- Primary framework is the standard `testing` package.
-- Cover command behavior in `cmd/synocli/*_test.go` and transport/API behavior in `internal/.../*_test.go`.
-- Add regression tests for bug fixes (status mapping, input validation, request encoding, auth edge cases).
+## Coding Conventions
+- Go 1.26, `gofmt`-clean.
+- Idiomatic names: exported `CamelCase`, unexported `lowerCamel`, lowercase package names.
+- Small focused functions. Typed request/response models in `internal/synology/`.
+- Tests: standard `testing` package, `TestXxx`, table-driven with `t.Run(...)`.
+- Regression tests for bug fixes (status mapping, validation, encoding, auth).
 
-## Commit & Pull Request Guidelines
-- Follow existing commit style: short imperative subject lines (for example, `Fix DS add URL handling`, `Add CI pipeline`).
-- PRs should include:
-  - what changed and why,
-  - test evidence (`make test`, `make lint`),
-  - sample CLI output when UX/formatting changes.
+## Commit Style
+Short imperative subject lines: `Fix DS add URL handling`, `Add CI pipeline`, `Remove dead code`.
 
-## Security & Configuration Tips
-- Do not commit credentials. Prefer `--password-stdin` or `--credentials-file` in local, ignored files.
-- Use `--debug` carefully; sensitive fields are redacted, but review logs before sharing.
+## Security
+- Never commit credentials. Use `--password-stdin` or `--credentials-file` (gitignored).
+- `--debug` redacts sensitive fields via `internal/redact/`, but review logs before sharing.
