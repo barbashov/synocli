@@ -153,34 +153,15 @@ func newDSResumeCmd(ac *appContext) *cobra.Command {
 }
 
 func newDSDeleteCmd(ac *appContext) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "delete <task-id> [<task-id>...]",
-		Short: "Delete tasks",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ids := args
-			return ac.withSession(cmd, joinCommand("ds", "delete"), func(ctx context.Context, s *session) (any, error) {
-				if err := s.dsClient.Delete(ctx, ids); err != nil {
-					return nil, err
-				}
-				data := map[string]any{"task_ids": ids}
-				if ac.opts.JSON {
-					return data, nil
-				}
-				printKVBlock(ac.out, "Delete", []kvField{
-					{Label: "Task IDs", Value: strings.Join(ids, ", ")},
-				})
-				return nil, nil
-			})
-		},
-	}
-	return cmd
+	return actionWithIDs(ac, "delete", func(ctx context.Context, s *session, ids []string) error {
+		return s.dsClient.Delete(ctx, ids)
+	})
 }
 
 func actionWithIDs(ac *appContext, action string, run func(context.Context, *session, []string) error) *cobra.Command {
 	return &cobra.Command{
 		Use:   fmt.Sprintf("%s <task-id> [<task-id>...]", action),
-		Short: strings.ToUpper(action[:1]) + action[1:] + " tasks",
+		Short: capitalizeWord(action) + " tasks",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ids := args
@@ -192,7 +173,7 @@ func actionWithIDs(ac *appContext, action string, run func(context.Context, *ses
 				if ac.opts.JSON {
 					return data, nil
 				}
-				printKVBlock(ac.out, strings.ToUpper(action[:1])+action[1:], []kvField{
+				printKVBlock(ac.out, capitalizeWord(action), []kvField{
 					{Label: "Task IDs", Value: strings.Join(ids, ", ")},
 				})
 				return nil, nil

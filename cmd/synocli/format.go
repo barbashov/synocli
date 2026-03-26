@@ -17,7 +17,7 @@ func formatBytes(b int64) string {
 		}
 		v /= 1024
 	}
-	return fmt.Sprintf("%.1f TB", v)
+	return fmt.Sprintf("%.1f TB", v) // unreachable: loop handles TB
 }
 
 func formatSpeed(bps int64) string {

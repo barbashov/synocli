@@ -79,17 +79,13 @@ func newFSInfoCmd(ac *appContext) *cobra.Command {
 }
 
 func newFSSharesCmd(ac *appContext) *cobra.Command {
-	var offset, limit int
 	return &cobra.Command{
 		Use:   "shares",
 		Short: "List shared folders",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ac.withFSSession(cmd, joinCommand("fs", "shares"), func(ctx context.Context, s *session) (any, error) {
-				params := makeValues(
-					"offset", fmt.Sprintf("%d", offset),
-					"limit", fmt.Sprintf("%d", limit),
-				)
+				params := makeValues("offset", "0", "limit", "0")
 				var out map[string]any
 				if err := s.fsClient.Call(ctx, filestation.APIList, "list_share", params, &out); err != nil {
 					return nil, err
@@ -364,16 +360,11 @@ func newFSCopyCmd(ac *appContext, move bool) *cobra.Command {
 func newFSDeleteCmd(ac *appContext) *cobra.Command {
 	var recursive bool
 	var async bool
-	var interval time.Duration
-	var maxWait time.Duration
 	cmd := &cobra.Command{
 		Use:   "delete <path> [<path>...]",
 		Short: "Delete files/folders",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validatePositiveDuration("--interval", interval); err != nil {
-				return err
-			}
 			return ac.withFSSession(cmd, joinCommand("fs", "delete"), func(ctx context.Context, s *session) (any, error) {
 				if err := s.fsClient.EnsureDeleteSafety(ctx, args, recursive); err != nil {
 					return nil, err
@@ -408,14 +399,6 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 					return nil, apperr.New("internal_error", "delete task id missing", 1)
 				}
 				out["task_id"] = taskID
-				if !async {
-					status, err := s.fsClient.WaitTask(ctx, filestation.APIDelete, taskID, interval, maxWait)
-					if err != nil {
-						return nil, err
-					}
-					out["status"] = status
-					out["waited"] = true
-				}
 				if ac.opts.JSON {
 					return out, nil
 				}
@@ -426,8 +409,6 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "Delete directories recursively")
 	cmd.Flags().BoolVar(&async, "async", false, "Run async delete task")
-	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
-	cmd.Flags().DurationVar(&maxWait, "max-wait", 0, "Maximum wait duration (0 means unlimited)")
 	return cmd
 }
 
@@ -585,14 +566,13 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 }
 
 func newFSSearchResultsCmd(ac *appContext) *cobra.Command {
-	var offset, limit int
 	return &cobra.Command{
 		Use:   "search-results <task-id>",
 		Short: "Get search results",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ac.withFSSession(cmd, joinCommand("fs", "search-results"), func(ctx context.Context, s *session) (any, error) {
-				params := makeValues("taskid", args[0], "offset", fmt.Sprintf("%d", offset), "limit", fmt.Sprintf("%d", limit))
+				params := makeValues("taskid", args[0], "offset", "0", "limit", "0")
 				var out map[string]any
 				if err := s.fsClient.Call(ctx, filestation.APISearch, "list", params, &out); err != nil {
 					return nil, err

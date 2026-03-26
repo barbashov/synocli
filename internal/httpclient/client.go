@@ -82,12 +82,10 @@ func (d *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	_, _ = fmt.Fprintf(d.out, "[debug] <- status=%s after %s\n", resp.Status, dur)
 	d.logResponseBody(resp)
 	if req.URL != nil {
-		hostURL := &url.URL{Scheme: req.URL.Scheme, Host: req.URL.Host}
 		for _, c := range resp.Cookies() {
 			_, _ = fmt.Fprintf(d.out, "[debug]   set-cookie %s=%s\n", c.Name, redact.HeaderValue("Set-Cookie", c.Value))
 		}
 		for _, c := range req.Cookies() {
-			_ = hostURL
 			_, _ = fmt.Fprintf(d.out, "[debug]   sent-cookie %s=%s\n", c.Name, redact.HeaderValue("Cookie", c.Value))
 		}
 	}
