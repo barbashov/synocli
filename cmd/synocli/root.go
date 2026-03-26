@@ -19,6 +19,7 @@ import (
 	"synocli/internal/synology/apiinfo"
 	"synocli/internal/synology/auth"
 	"synocli/internal/synology/downloadstation"
+	"synocli/internal/synology/filestation"
 )
 
 type appContext struct {
@@ -33,6 +34,7 @@ type session struct {
 	start       time.Time
 	authClient  *auth.Client
 	dsClient    *downloadstation.Client
+	fsClient    *filestation.Client
 	apiVersions map[string]int
 }
 
@@ -68,28 +70,56 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&ac.opts.JSON, "json", false, "JSON output")
 	f.BoolVar(&ac.opts.Debug, "debug", false, "Debug request flow")
 
-	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac))
+	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac))
 	return cmd
 }
 
 // withSession creates an authenticated session with Download Station client and handles output.
 func (a *appContext) withSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) (any, error)) error {
-	return a.doSession(cmd, endpointRaw, commandName, true, fn)
+	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{
+		authSession: "DownloadStation",
+		needsDS:     true,
+	}, fn)
 }
 
 // withAuthSession creates an authenticated session without Download Station client setup.
 func (a *appContext) withAuthSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) (any, error)) error {
-	return a.doSession(cmd, endpointRaw, commandName, false, fn)
+	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{authSession: "DownloadStation"}, fn)
 }
 
 // withStreamingSession creates a session for streaming commands that handle their own output.
 func (a *appContext) withStreamingSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) error) error {
-	return a.doSession(cmd, endpointRaw, commandName, true, func(ctx context.Context, s *session) (any, error) {
+	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{
+		authSession: "DownloadStation",
+		needsDS:     true,
+	}, func(ctx context.Context, s *session) (any, error) {
 		return nil, fn(ctx, s)
 	})
 }
 
-func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName string, needsDS bool, fn func(context.Context, *session) (any, error)) error {
+func (a *appContext) withFSSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) (any, error)) error {
+	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{
+		authSession: "FileStation",
+		needsFS:     true,
+	}, fn)
+}
+
+func (a *appContext) withStreamingFSSession(cmd *cobra.Command, endpointRaw, commandName string, fn func(context.Context, *session) error) error {
+	return a.doSession(cmd, endpointRaw, commandName, moduleOptions{
+		authSession: "FileStation",
+		needsFS:     true,
+	}, func(ctx context.Context, s *session) (any, error) {
+		return nil, fn(ctx, s)
+	})
+}
+
+type moduleOptions struct {
+	authSession string
+	needsDS     bool
+	needsFS     bool
+}
+
+func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName string, opts moduleOptions, fn func(context.Context, *session) (any, error)) error {
 	start := time.Now()
 	u, err := config.ValidateEndpoint(endpointRaw)
 	if err != nil {
@@ -117,9 +147,10 @@ func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName stri
 
 	apiVersions := map[string]int{"auth": authVersion}
 	var dsClient *downloadstation.Client
+	var fsClient *filestation.Client
 	var dsAPIName, dsPath string
 	var dsVersion int
-	if needsDS {
+	if opts.needsDS {
 		dsAPIName, dsPath, dsVersion = selectDownloadStationAPIs(entries)
 		dsVersion = clampVersion(dsVersion, 3)
 		if a.opts.Debug {
@@ -127,19 +158,35 @@ func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName stri
 		}
 		apiVersions["task"] = dsVersion
 	}
+	fsAPIs := map[string]filestation.APISpec{}
+	if opts.needsFS {
+		fsAPIs = selectFileStationAPIs(entries)
+		for key, api := range fsAPIs {
+			apiVersions["fs_"+key] = api.Version
+		}
+	}
 
 	authClient := &auth.Client{Endpoint: u.String(), Path: authPath, Version: authVersion, HTTP: hc}
-	sid, err := authClient.Login(ctx, a.opts.User, a.opts.Password)
+	if strings.TrimSpace(opts.authSession) == "" {
+		opts.authSession = "DownloadStation"
+	}
+	sid, err := authClient.Login(ctx, a.opts.User, a.opts.Password, opts.authSession)
 	if err != nil {
 		return a.outputError(commandName, u.String(), start, apperr.Wrap("auth_failed", "authentication failed", 2, err))
 	}
 	defer func() {
-		_ = authClient.Logout(context.Background(), sid)
+		_ = authClient.Logout(context.Background(), sid, opts.authSession)
 	}()
-	if needsDS {
+	if opts.needsDS {
 		dsClient, err = downloadstation.NewClient(u.String(), sid, hc, dsPath, dsVersion, dsAPIName)
 		if err != nil {
 			return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize download station client", 1, err))
+		}
+	}
+	if opts.needsFS {
+		fsClient, err = filestation.NewClient(u.String(), sid, hc, fsAPIs)
+		if err != nil {
+			return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize file station client", 1, err))
 		}
 	}
 	s := &session{
@@ -147,6 +194,7 @@ func (a *appContext) doSession(cmd *cobra.Command, endpointRaw, commandName stri
 		start:       start,
 		authClient:  authClient,
 		dsClient:    dsClient,
+		fsClient:    fsClient,
 		apiVersions: apiVersions,
 	}
 	data, err := fn(ctx, s)
@@ -181,6 +229,25 @@ func toAppError(err error) error {
 				"synology_code": dsErr.Code,
 			},
 			Err: err,
+		}
+	}
+	var fsErr *filestation.APIError
+	if errors.As(err, &fsErr) {
+		code := fsErr.EffectiveCode()
+		details := map[string]any{
+			"synology_code": code,
+		}
+		if fsErr.Path != "" {
+			details["path"] = fsErr.Path
+		}
+		if fsErr.Code != 0 && fsErr.Code != code {
+			details["synology_parent_code"] = fsErr.Code
+		}
+		return &apperr.Error{
+			Code:     "synology_error",
+			Message:  filestation.ErrorMessage(code),
+			ExitCode: 1,
+			Details:  details,
 		}
 	}
 	var app *apperr.Error
@@ -264,4 +331,36 @@ func selectDownloadStationAPIs(entries map[string]apiinfo.Entry) (taskName, task
 		taskName, taskPath, taskVersion = best.name, best.path, best.max
 	}
 	return taskName, taskPath, taskVersion
+}
+
+func selectFileStationAPIs(entries map[string]apiinfo.Entry) map[string]filestation.APISpec {
+	type fsAPI struct {
+		key          string
+		apiName      string
+		fallbackVer  int
+		maxSupported int
+	}
+	catalog := []fsAPI{
+		{key: filestation.APIInfo, apiName: "SYNO.FileStation.Info", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APIList, apiName: "SYNO.FileStation.List", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APICreateFolder, apiName: "SYNO.FileStation.CreateFolder", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APIRename, apiName: "SYNO.FileStation.Rename", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APIDelete, apiName: "SYNO.FileStation.Delete", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APICopyMove, apiName: "SYNO.FileStation.CopyMove", fallbackVer: 3, maxSupported: 3},
+		{key: filestation.APIUpload, apiName: "SYNO.FileStation.Upload", fallbackVer: 2, maxSupported: 3},
+		{key: filestation.APIDownload, apiName: "SYNO.FileStation.Download", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APISearch, apiName: "SYNO.FileStation.Search", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APIDirSize, apiName: "SYNO.FileStation.DirSize", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APIMD5, apiName: "SYNO.FileStation.MD5", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APIExtract, apiName: "SYNO.FileStation.Extract", fallbackVer: 2, maxSupported: 2},
+		{key: filestation.APICompress, apiName: "SYNO.FileStation.Compress", fallbackVer: 3, maxSupported: 3},
+		{key: filestation.APIBackgroundTask, apiName: "SYNO.FileStation.BackgroundTask", fallbackVer: 3, maxSupported: 3},
+	}
+	out := make(map[string]filestation.APISpec, len(catalog))
+	for _, item := range catalog {
+		path, version := apiinfo.Select(entries, item.apiName, "/webapi/entry.cgi", item.fallbackVer)
+		version = clampVersion(version, item.maxSupported)
+		out[item.key] = filestation.APISpec{Name: item.apiName, Path: path, Version: version}
+	}
+	return out
 }

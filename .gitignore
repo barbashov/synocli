@@ -9,3 +9,5 @@ bin/
 *.swp
 *.swo
 *~
+tmp/
+.DS_Store

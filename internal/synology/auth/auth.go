@@ -32,14 +32,17 @@ type loginResponse struct {
 // NOTE: The Synology API requires credentials as GET query parameters.
 // This means the password will appear in server access logs and proxy logs.
 // The debug transport redacts these values, but network intermediaries may not.
-func (c *Client) Login(ctx context.Context, user, password string) (string, error) {
+func (c *Client) Login(ctx context.Context, user, password, session string) (string, error) {
 	vals := url.Values{}
 	vals.Set("api", "SYNO.API.Auth")
 	vals.Set("version", strconv.Itoa(c.Version))
 	vals.Set("method", "login")
 	vals.Set("account", user)
 	vals.Set("passwd", password)
-	vals.Set("session", "DownloadStation")
+	if session == "" {
+		session = "DownloadStation"
+	}
+	vals.Set("session", session)
 	vals.Set("format", "sid")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Endpoint+c.Path+"?"+vals.Encode(), nil)
 	if err != nil {
@@ -67,12 +70,15 @@ func (c *Client) Login(ctx context.Context, user, password string) (string, erro
 	return out.Data.SID, nil
 }
 
-func (c *Client) Logout(ctx context.Context, sid string) error {
+func (c *Client) Logout(ctx context.Context, sid, session string) error {
 	vals := url.Values{}
 	vals.Set("api", "SYNO.API.Auth")
 	vals.Set("version", strconv.Itoa(c.Version))
 	vals.Set("method", "logout")
-	vals.Set("session", "DownloadStation")
+	if session == "" {
+		session = "DownloadStation"
+	}
+	vals.Set("session", session)
 	vals.Set("_sid", sid)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Endpoint+c.Path+"?"+vals.Encode(), nil)
 	if err != nil {

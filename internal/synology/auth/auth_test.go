@@ -18,7 +18,7 @@ func TestLoginRequestAndResponse(t *testing.T) {
 	}))
 	defer ts.Close()
 	c := &Client{Endpoint: ts.URL, Path: "/auth", Version: 6, HTTP: ts.Client()}
-	sid, err := c.Login(context.Background(), "user", "pass")
+	sid, err := c.Login(context.Background(), "user", "pass", "FileStation")
 	if err != nil {
 		t.Fatalf("Login error: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestLogoutIncludesSID(t *testing.T) {
 	}))
 	defer ts.Close()
 	c := &Client{Endpoint: ts.URL, Path: "/auth", Version: 6, HTTP: ts.Client()}
-	if err := c.Logout(context.Background(), "xyz"); err != nil {
+	if err := c.Logout(context.Background(), "xyz", "FileStation"); err != nil {
 		t.Fatalf("Logout error: %v", err)
 	}
 	if !called {
@@ -52,7 +52,7 @@ func TestLoginFailure(t *testing.T) {
 	}))
 	defer ts.Close()
 	c := &Client{Endpoint: ts.URL, Path: "/auth", Version: 6, HTTP: ts.Client()}
-	_, err := c.Login(context.Background(), "u", "p")
+	_, err := c.Login(context.Background(), "u", "p", "DownloadStation")
 	if err == nil {
 		t.Fatal("expected error")
 	}

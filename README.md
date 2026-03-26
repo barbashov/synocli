@@ -1,6 +1,6 @@
 # synocli
 
-`synocli` is a CLI for Synology DSM WebAPI with Download Station support.
+`synocli` is a CLI for Synology DSM WebAPI with Download Station and File Station support.
 It is designed for DSM 6.2+ compatibility and uses API discovery (`SYNO.API.Info`) to select the best available endpoints.
 
 ## Build
@@ -35,17 +35,14 @@ Example endpoint: `https://192.168.0.1:5001`
 ### Mode B: Credentials file
 
 - `--credentials-file <path>`
-- **must not** be combined with `--user`, `--password`, or `--password-stdin`
+- must not be combined with `--user`, `--password`, or `--password-stdin`
 
 Credentials file format is ENV-style:
 
 ```env
-# comments and unknown keys are ignored
 user=admin
 password=secret
 ```
-
-Keys are case-insensitive.
 
 ## Global Flags
 
@@ -77,87 +74,126 @@ Keys are case-insensitive.
 - `synocli ds wait <endpoint> <task-id> [--interval <duration>] [--max-wait <duration>]`
 - `synocli ds watch <endpoint> [--interval <duration>] [--id <task-id>]... [--status <normalized>]...`
 
+### fs (alias: filestation)
+
+Core:
+- `synocli fs info <endpoint>`
+- `synocli fs shares <endpoint>`
+- `synocli fs list <endpoint> <folder-path> [...]` (alias: `fs ls`)
+- `synocli fs get <endpoint> <path> [<path>...]`
+- `synocli fs mkdir <endpoint> <parent-path> <name> [<name>...] [--parents]`
+- `synocli fs rename <endpoint> <path> <new-name>`
+- `synocli fs copy <endpoint> <path> [<path>...] --to <destination> [--overwrite|--skip-existing] [--async]` (alias: `fs cp`)
+- `synocli fs move <endpoint> <path> [<path>...] --to <destination> [--overwrite|--skip-existing] [--async]` (alias: `fs mv`)
+- `synocli fs delete <endpoint> <path> [<path>...] -r|--recursive [--async]`
+
+Transfer:
+- `synocli fs upload <endpoint> <local-path> <remote-path> [--parents] [--overwrite|--skip-existing]`
+- `synocli fs download <endpoint> <remote-path> [<remote-path>...] --output <local-file> [--mode download|open]`
+
+Search:
+- `synocli fs search <endpoint> <folder-path> --pattern <pattern> [--recursive] [--async]`
+- `synocli fs search-results <endpoint> <task-id>`
+- `synocli fs search-stop <endpoint> <task-id>`
+- `synocli fs search-clear <endpoint>`
+
+Task APIs:
+- `synocli fs dir-size <endpoint> <path> [<path>...] [--async]`
+- `synocli fs dir-size-status <endpoint> <task-id>`
+- `synocli fs dir-size-stop <endpoint> <task-id>`
+- `synocli fs md5 <endpoint> <file-path> [--async]`
+- `synocli fs md5-status <endpoint> <task-id>`
+- `synocli fs md5-stop <endpoint> <task-id>`
+- `synocli fs extract <endpoint> <archive-path> --to <dest-folder> [--async]`
+- `synocli fs extract-status <endpoint> <task-id>`
+- `synocli fs extract-stop <endpoint> <task-id>`
+- `synocli fs compress <endpoint> <path> [<path>...] --to <dest-archive> [--async]`
+- `synocli fs compress-status <endpoint> <task-id>`
+- `synocli fs compress-stop <endpoint> <task-id>`
+
+Background tasks and watch:
+- `synocli fs tasks <endpoint>`
+- `synocli fs tasks-clear <endpoint> [--task-id <id>]...`
+- `synocli fs watch tasks <endpoint> [--interval <duration>]`
+- `synocli fs watch folder <endpoint> <folder-path> [--interval <duration>] [--recursive]`
+
 ## Examples
 
 ```bash
 # auth checks
 synocli auth ping https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
-synocli auth whoami https://192.168.0.1:5001 --user admin --password-stdin
-synocli auth api-info https://192.168.0.1:5001 --credentials-file ./creds.env --prefix SYNO.DownloadStation
 
-# add/list/get
-synocli ds add https://192.168.0.1:5001 ./ubuntu.torrent --credentials-file ./creds.env --insecure-tls
-synocli ds add https://192.168.0.1:5001 magnet:?xt=urn:btih:... --credentials-file ./creds.env --insecure-tls
-synocli ds add https://192.168.0.1:5001 https://example.com/file.iso --credentials-file ./creds.env --insecure-tls
+# download station
 synocli ds list https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
-synocli ds get https://192.168.0.1:5001 dbid_123 --credentials-file ./creds.env --insecure-tls
 
-# control
-synocli ds pause https://192.168.0.1:5001 dbid_1 dbid_2 --credentials-file ./creds.env --insecure-tls
-synocli ds resume https://192.168.0.1:5001 dbid_1 --credentials-file ./creds.env --insecure-tls
-synocli ds delete https://192.168.0.1:5001 dbid_1 --with-data --credentials-file ./creds.env --insecure-tls
+# file station core
+synocli fs shares https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+synocli fs ls https://192.168.0.1:5001 /volume1 --credentials-file ./creds.env --insecure-tls
+synocli fs cp https://192.168.0.1:5001 /volume1/a.txt --to /volume1/archive --credentials-file ./creds.env --insecure-tls
+synocli fs mv https://192.168.0.1:5001 /volume1/archive/a.txt --to /volume1/final --credentials-file ./creds.env --insecure-tls
+synocli fs delete https://192.168.0.1:5001 /volume1/archive/old -r --credentials-file ./creds.env --insecure-tls
 
-# watch/wait
-synocli ds wait https://192.168.0.1:5001 dbid_1 --max-wait 10m --credentials-file ./creds.env --insecure-tls
-synocli ds watch https://192.168.0.1:5001 --interval 2s --status downloading --credentials-file ./creds.env --insecure-tls
+# file station transfer
+synocli fs upload https://192.168.0.1:5001 ./build.tar.gz /volume1/uploads --credentials-file ./creds.env --insecure-tls
+synocli fs download https://192.168.0.1:5001 /volume1/uploads/build.tar.gz --output ./build.tar.gz --credentials-file ./creds.env --insecure-tls
+
+# search and tasks
+synocli fs search https://192.168.0.1:5001 /volume1 --pattern report --credentials-file ./creds.env --insecure-tls
+synocli fs tasks https://192.168.0.1:5001 --credentials-file ./creds.env --insecure-tls
+
+# watch
+synocli fs watch tasks https://192.168.0.1:5001 --interval 2s --credentials-file ./creds.env --insecure-tls
+synocli fs watch folder https://192.168.0.1:5001 /volume1 --interval 2s --recursive --credentials-file ./creds.env --insecure-tls
 ```
 
 ## Output
 
 ### Human output
 
-- Human output uses styled tables and compact key-value blocks.
-- Styling is enabled on TTY and disabled automatically for redirected/piped output and `NO_COLOR`.
-- `auth api-info` is rendered as a sorted table with match summary.
-- `ds watch` uses in-place refresh on TTY; JSON mode remains append-only snapshots.
-- `ds add` auto-detects input type in this order: magnet URI, existing local file (torrent), URL with scheme.
-- For DS2 numeric statuses, status is rendered with enum and code, e.g. `paused (3)`.
+- Styled tables and key-value blocks.
+- TTY watch commands (`ds watch`, `fs watch *`) use in-place refresh.
 
-### JSON envelope (`--json`)
+### JSON output (`--json`)
 
-All commands return an envelope:
+- All non-watch commands return a single JSON envelope with `ok`, `command`, `data`, `error`, and `meta`.
+- Watch commands return JSONL snapshots (`one envelope per tick`) for agent-friendly streaming consumption.
+
+Example envelope:
 
 ```json
 {
   "ok": true,
-  "command": "ds list",
+  "command": "fs list",
   "data": {},
-  "error": null,
   "meta": {
     "timestamp": "2026-01-01T00:00:00Z",
     "duration_ms": 12,
     "endpoint": "https://192.168.0.1:5001",
     "api_version": {
       "auth": 6,
-      "task": 2
+      "fs_list": 2
     }
   }
 }
 ```
 
-Task objects include status-related fields:
+## Notes
 
-- `normalized_status` (`waiting|downloading|paused|finishing|finished|seeding|error|unknown`)
-- `raw_status` (raw API value as received)
-- `status_enum` (enum name when mapped)
-- `status_display` (human display form, e.g. `paused (3)`)
-- `status_code` (present for numeric statuses)
-
-## DSM / Download Station Notes
-
-- API discovery is used on each invocation.
-- DS2 task APIs are used when available; DSM6-compatible behavior is preserved where needed.
-- Session is login/logout per invocation (no session persistence).
-
-## Debugging
-
-Use `--debug` to print request/response flow with redaction.
+- `fs` and `ds` share the same auth/session orchestration in CLI runtime.
+- `fs delete` requires `--recursive` (`-r`) for directory deletion.
+- Recursive directory upload follows Linux `cp -r` style destination behavior.
+- `fs list` human output shows `Name | Path | Size | MTime`; directories render `<DIR>` in the size column.
 
 ## Testing
 
 ```bash
 make test
 ```
+
+Manual File Station test plan:
+
+- `testplans/filestation.md`
+- `testplans/filestation.sh` (runnable script derived from the plan)
 
 ## Architecture
 
