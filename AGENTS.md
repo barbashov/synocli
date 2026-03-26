@@ -42,6 +42,25 @@ tests_e2e/downloadstation.sh --endpoint <url> --credentials-file <path> [--insec
 ## Commit Style
 Short imperative subject lines: `Fix DS add URL handling`, `Add CI pipeline`, `Remove dead code`.
 
+## Versioning and Releases
+- SemVer is mandatory. Release tags must be annotated and formatted as `vX.Y.Z`.
+- Current baseline release: `v0.1.0` (dated 2026-03-27).
+- Every release must have a matching `CHANGELOG.md` section: `## [X.Y.Z] - YYYY-MM-DD`.
+- Every release section must include `### Agent Notes` with YAML keys:
+  - `breaking_changes`
+  - `commands_added`
+  - `commands_changed`
+  - `flags_added`
+  - `flags_changed`
+  - `behavior_changes`
+  - `skill_update_action`
+- Keep `## [Unreleased]` updated whenever command behavior/flags/output changes, so AI agents can refresh CLI skills before release.
+- Release flow:
+  1. Update `CHANGELOG.md` (`Unreleased` -> new version section).
+  2. Run `make release-check VERSION=vX.Y.Z`.
+  3. Run `make release VERSION=vX.Y.Z`.
+  4. Push: `git push origin main vX.Y.Z`.
+
 ## Security
 - Never commit credentials. Use `--password-stdin` or `--credentials-file` (gitignored).
 - `--debug` redacts sensitive fields via `internal/redact/`, but review logs before sharing.

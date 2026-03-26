@@ -59,9 +59,13 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "synocli",
 		Short:         "Synology DSM CLI",
+		Version:       versionValue(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	cmd.SetVersionTemplate("{{.Version}}\n")
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
 	f := cmd.PersistentFlags()
 	f.StringVar(&ac.opts.Endpoint, "endpoint", "", "Synology DSM endpoint (https://host:5001)")
 	f.StringVar(&ac.opts.ConfigPath, "config", ac.opts.ConfigPath, "Path to per-user synocli config file")
@@ -74,7 +78,7 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&ac.opts.JSON, "json", false, "JSON output")
 	f.BoolVar(&ac.opts.Debug, "debug", false, "Debug request flow")
 
-	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac), newCLIConfigCmd(ac))
+	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac), newCLIConfigCmd(ac), newVersionCmd(ac))
 	return cmd
 }
 

@@ -3,10 +3,23 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
 jobs:
+  release-check:
+    name: Release Metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            make release-check VERSION="${GITHUB_REF_NAME}"
+          else
+            make release-check
+          fi
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

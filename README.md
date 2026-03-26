@@ -10,6 +10,7 @@ Build natively:
 ```bash
 make build
 ./bin/synocli --help
+./bin/synocli --version
 ```
 
 Or build and run via Docker:
@@ -96,6 +97,17 @@ Use CLI help for full command reference:
 ./bin/synocli ds --help
 ./bin/synocli fs --help
 ./bin/synocli fs watch --help
+```
+
+## Versioning and Releases
+
+- Versioning follows SemVer using annotated git tags: `vX.Y.Z`.
+- See `CHANGELOG.md` for release history and agent-facing change summaries.
+- Release checks and tagging:
+
+```bash
+make release-check
+make release VERSION=v0.1.0
 ```
 
 ## Output Modes
