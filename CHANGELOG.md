@@ -20,6 +20,29 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.3.0] - 2026-03-27
+
+### Added
+- `reuse_session=true` config directive: session SID is cached in `~/.synocli/session` (chmod 600) and reused across consecutive calls, skipping the login/logout round-trips. On session expiry or an invalid cached SID the session is transparently renewed without user interaction.
+- `cli-config --help` now lists all supported config file directives with their types and defaults.
+
+### Fixed
+- Error code 119 (SID not found) is now treated as a session expiry and triggers a transparent re-login when `reuse_session` is enabled, instead of surfacing an unmapped error.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed:
+  - "cli-config: added long help listing all config directives"
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "reuse_session=true in config caches the session SID in ~/.synocli/session; subsequent calls skip login/logout"
+  - "error 119 (SID not found) now triggers session refresh instead of an unmapped error"
+skill_update_action: "Update skill: document reuse_session directive and session file location."
+```
+
 ## [0.2.2] - 2026-03-27
 
 ### Fixed
