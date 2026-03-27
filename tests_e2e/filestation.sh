@@ -209,20 +209,19 @@ print(code)'
 }
 
 run_stop_with_race_fallback() {
-  local stop_cmd="$1"
-  local status_cmd="$2"
-  local task_id="$3"
+  local parent_cmd="$1"
+  local task_id="$2"
   local stop_json
   local status_json
   local synology_code
 
-  if stop_json="$(run_json_capture "$BIN" fs "$stop_cmd" "$task_id" --json "${COMMON_ARGS[@]}")"; then
+  if stop_json="$(run_json_capture "$BIN" fs "$parent_cmd" stop "$task_id" --json "${COMMON_ARGS[@]}")"; then
     printf '%s\n' "$stop_json" | json_assert_envelope
     return 0
   fi
 
   echo "Stop command failed, checking status..." >&2
-  if status_json="$(run_json_capture "$BIN" fs "$status_cmd" "$task_id" --json "${COMMON_ARGS[@]}")"; then
+  if status_json="$(run_json_capture "$BIN" fs "$parent_cmd" status "$task_id" --json "${COMMON_ARGS[@]}")"; then
     printf '%s\n' "$status_json" | json_assert_envelope
     if printf '%s\n' "$status_json" | json_assert_finished_true; then
       return 0
@@ -285,7 +284,6 @@ main() {
   run "$BIN" auth ping "${COMMON_ARGS[@]}"
   run "$BIN" auth api-info --prefix SYNO.FileStation "${COMMON_ARGS[@]}"
 
-  run "$BIN" fs info "${COMMON_ARGS[@]}"
   run "$BIN" fs shares "${COMMON_ARGS[@]}"
 
   run "$BIN" fs mkdir "$BASE_PARENT" "$BASE_NAME" --parents "${COMMON_ARGS[@]}"
@@ -302,28 +300,28 @@ main() {
   run "$BIN" fs mv "$BASE/copy/a-renamed.txt" --to "$BASE/moved" "${COMMON_ARGS[@]}"
 
   search_task_id="$(run_json_capture "$BIN" fs search "$BASE" --pattern renamed --async --json "${COMMON_ARGS[@]}" | json_extract_task_id)"
-  run "$BIN" fs search-results "$search_task_id" "${COMMON_ARGS[@]}"
-  run "$BIN" fs search-stop "$search_task_id" "${COMMON_ARGS[@]}" || run "$BIN" fs search-results "$search_task_id" "${COMMON_ARGS[@]}"
-  run "$BIN" fs search-clear "$search_task_id" "${COMMON_ARGS[@]}"
+  run "$BIN" fs search results "$search_task_id" "${COMMON_ARGS[@]}"
+  run "$BIN" fs search stop "$search_task_id" "${COMMON_ARGS[@]}" || run "$BIN" fs search results "$search_task_id" "${COMMON_ARGS[@]}"
+  run "$BIN" fs search clear "$search_task_id" "${COMMON_ARGS[@]}"
 
   dir_size_task_id="$(run_json_capture "$BIN" fs dir-size "$BASE" --async --json "${COMMON_ARGS[@]}" | json_extract_task_id)"
-  run "$BIN" fs dir-size-status "$dir_size_task_id" "${COMMON_ARGS[@]}"
-  run_stop_with_race_fallback "dir-size-stop" "dir-size-status" "$dir_size_task_id"
+  run "$BIN" fs dir-size status "$dir_size_task_id" "${COMMON_ARGS[@]}"
+  run_stop_with_race_fallback "dir-size" "$dir_size_task_id"
 
   md5_task_id="$(run_json_capture "$BIN" fs md5 "$BASE/moved/a-renamed.txt" --async --json "${COMMON_ARGS[@]}" | json_extract_task_id)"
-  run "$BIN" fs md5-status "$md5_task_id" "${COMMON_ARGS[@]}"
-  run_stop_with_race_fallback "md5-stop" "md5-status" "$md5_task_id"
+  run "$BIN" fs md5 status "$md5_task_id" "${COMMON_ARGS[@]}"
+  run_stop_with_race_fallback "md5" "$md5_task_id"
   run "$BIN" fs md5 "$BASE/moved/a-renamed.txt" "${COMMON_ARGS[@]}"
 
   compress_task_id="$(run_json_capture "$BIN" fs compress "$BASE" --to "$BASE/archive-async.zip" --async --json "${COMMON_ARGS[@]}" | json_extract_task_id)"
-  run "$BIN" fs compress-status "$compress_task_id" "${COMMON_ARGS[@]}"
-  run_stop_with_race_fallback "compress-stop" "compress-status" "$compress_task_id"
+  run "$BIN" fs compress status "$compress_task_id" "${COMMON_ARGS[@]}"
+  run_stop_with_race_fallback "compress" "$compress_task_id"
 
   run "$BIN" fs compress "$BASE" --to "$BASE/archive.zip" "${COMMON_ARGS[@]}"
 
   extract_task_id="$(run_json_capture "$BIN" fs extract "$BASE/archive.zip" --to "$BASE/extracted-async" --async --json "${COMMON_ARGS[@]}" | json_extract_task_id)"
-  run "$BIN" fs extract-status "$extract_task_id" "${COMMON_ARGS[@]}"
-  run_stop_with_race_fallback "extract-stop" "extract-status" "$extract_task_id"
+  run "$BIN" fs extract status "$extract_task_id" "${COMMON_ARGS[@]}"
+  run_stop_with_race_fallback "extract" "$extract_task_id"
 
   run "$BIN" fs extract "$BASE/archive.zip" --to "$BASE/extracted" "${COMMON_ARGS[@]}"
 

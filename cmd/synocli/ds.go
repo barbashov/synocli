@@ -202,9 +202,11 @@ func newDSResumeCmd(ac *appContext) *cobra.Command {
 }
 
 func newDSDeleteCmd(ac *appContext) *cobra.Command {
-	return actionWithIDs(ac, "delete", func(ctx context.Context, s *session, ids []string) error {
+	cmd := actionWithIDs(ac, "delete", func(ctx context.Context, s *session, ids []string) error {
 		return s.dsClient.Delete(ctx, ids)
 	})
+	cmd.Aliases = []string{"rm"}
+	return cmd
 }
 
 func actionWithIDs(ac *appContext, action string, run func(context.Context, *session, []string) error) *cobra.Command {

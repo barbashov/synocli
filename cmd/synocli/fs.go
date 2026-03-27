@@ -19,8 +19,19 @@ import (
 
 func newFSCmd(ac *appContext) *cobra.Command {
 	cmd := &cobra.Command{Use: "fs", Aliases: []string{"filestation"}, Short: "File Station commands"}
-	cmd.AddCommand(
-		newFSInfoCmd(ac),
+	cmd.AddGroup(
+		&cobra.Group{ID: "files", Title: "File Operations:"},
+		&cobra.Group{ID: "archive", Title: "Archive:"},
+		&cobra.Group{ID: "util", Title: "Utilities:"},
+		&cobra.Group{ID: "tasks", Title: "Background Tasks:"},
+	)
+	withGroup := func(g string, cmds ...*cobra.Command) []*cobra.Command {
+		for _, c := range cmds {
+			c.GroupID = g
+		}
+		return cmds
+	}
+	cmd.AddCommand(withGroup("files",
 		newFSSharesCmd(ac),
 		newFSListCmd(ac),
 		newFSGetCmd(ac),
@@ -31,51 +42,23 @@ func newFSCmd(ac *appContext) *cobra.Command {
 		newFSDeleteCmd(ac),
 		newFSUploadCmd(ac),
 		newFSDownloadCmd(ac),
-		newFSSearchCmd(ac),
-		newFSSearchResultsCmd(ac),
-		newFSSearchStopCmd(ac),
-		newFSSearchClearCmd(ac),
-		newFSDirSizeCmd(ac),
-		newFSDirSizeStatusCmd(ac),
-		newFSDirSizeStopCmd(ac),
-		newFSMD5Cmd(ac),
-		newFSMD5StatusCmd(ac),
-		newFSMD5StopCmd(ac),
-		newFSExtractCmd(ac),
-		newFSExtractStatusCmd(ac),
-		newFSExtractStopCmd(ac),
+	)...)
+	cmd.AddCommand(withGroup("archive",
 		newFSCompressCmd(ac),
-		newFSCompressStatusCmd(ac),
-		newFSCompressStopCmd(ac),
+		newFSExtractCmd(ac),
+	)...)
+	cmd.AddCommand(withGroup("util",
+		newFSDirSizeCmd(ac),
+		newFSMD5Cmd(ac),
+		newFSSearchCmd(ac),
+	)...)
+	cmd.AddCommand(withGroup("tasks",
 		newFSTasksCmd(ac),
 		newFSTasksClearCmd(ac),
-	)
+	)...)
 	return cmd
 }
 
-func newFSInfoCmd(ac *appContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "info",
-		Short: "Get File Station info",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withSession(cmd, joinCommand("fs", "info"), func(ctx context.Context, s *session) (any, error) {
-				var out map[string]any
-				if err := s.fsClient.Call(ctx, filestation.APIInfo, "get", nil, &out); err != nil {
-					return nil, err
-				}
-				if ac.opts.JSON {
-					return out, nil
-				}
-				printKVBlock(ac.out, "File Station", []kvField{
-					{Label: "Hostname", Value: filestation.ValueFromMap(out, "hostname")},
-					{Label: "Is Manager", Value: filestation.ValueFromMap(out, "is_manager")},
-				})
-				return nil, nil
-			})
-		},
-	}
-}
 
 func newFSSharesCmd(ac *appContext) *cobra.Command {
 	return &cobra.Command{
@@ -218,7 +201,7 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 	cmd.Flags().StringVar(&sortDirection, "sort-direction", "", "Sort direction asc/desc")
 	cmd.Flags().StringVar(&pattern, "pattern", "", "Name pattern")
 	cmd.Flags().StringVar(&filetype, "file-type", "", "file/dir/all")
-	cmd.Flags().BoolVar(&recursive, "recursive", false, "Recursive listing")
+	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "Recursive listing")
 	cmd.Flags().StringSliceVar(&additional, "additional", []string{"real_path", "size", "time", "type"}, "Additional fields")
 	cmd.Flags().BoolVar(&watch, "watch", false, "Continuous polling mode")
 	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
@@ -411,8 +394,9 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 	var recursive bool
 	var async bool
 	cmd := &cobra.Command{
-		Use:   "delete <path> [<path>...]",
-		Short: "Delete files/folders",
+		Use:     "delete <path> [<path>...]",
+		Aliases: []string{"rm"},
+		Short:   "Delete files/folders",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ac.withSession(cmd, joinCommand("fs", "delete"), func(ctx context.Context, s *session) (any, error) {
@@ -457,7 +441,7 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().BoolVar(&recursive, "recursive", false, "Delete directories recursively")
+	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "Delete directories recursively")
 	cmd.Flags().BoolVar(&async, "async", false, "Run async delete task")
 	return cmd
 }
@@ -607,84 +591,77 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&pattern, "pattern", "", "Pattern")
-	cmd.Flags().BoolVar(&recursive, "recursive", true, "Recursive search")
+	cmd.Flags().BoolVarP(&recursive, "recursive", "r", true, "Recursive search")
 	cmd.Flags().StringVar(&filetype, "file-type", "", "file/dir/all")
 	cmd.Flags().BoolVar(&async, "async", false, "Do not wait for completion")
 	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
 	cmd.Flags().DurationVar(&maxWait, "max-wait", 0, "Maximum wait duration (0 means unlimited)")
-	return cmd
-}
-
-func newFSSearchResultsCmd(ac *appContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "search-results <task-id>",
-		Short: "Get search results",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withSession(cmd, joinCommand("fs", "search-results"), func(ctx context.Context, s *session) (any, error) {
-				params := makeValues("taskid", args[0], "offset", "0", "limit", "0")
-				var out map[string]any
-				if err := s.fsClient.Call(ctx, filestation.APISearch, "list", params, &out); err != nil {
-					return nil, err
-				}
-				if ac.opts.JSON {
-					return out, nil
-				}
-				files := filestation.MapSliceAny(out["files"])
-				rows := make([][]string, 0, len(files))
-				for _, f := range files {
-					rows = append(rows, []string{filestation.ValueFromMap(f, "path"), filestation.ValueFromMap(f, "name")})
-				}
-				printTable(ac.out, []string{"Path", "Name"}, rows)
-				return nil, nil
-			})
-		},
-	}
-}
-
-func newFSSearchStopCmd(ac *appContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "search-stop <task-id>",
-		Short: "Stop search task",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withSession(cmd, joinCommand("fs", "search-stop"), func(ctx context.Context, s *session) (any, error) {
-				if err := s.fsClient.Call(ctx, filestation.APISearch, "stop", makeValues("taskid", args[0]), nil); err != nil {
-					return nil, err
-				}
-				if ac.opts.JSON {
-					return map[string]any{"task_id": args[0], "stopped": true}, nil
-				}
-				printKVBlock(ac.out, "Search Stop", []kvField{{Label: "Task ID", Value: args[0]}})
-				return nil, nil
-			})
-		},
-	}
-}
-
-func newFSSearchClearCmd(ac *appContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "search-clear <task-id> [<task-id>...]",
-		Short: "Clear search tasks",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withSession(cmd, joinCommand("fs", "search-clear"), func(ctx context.Context, s *session) (any, error) {
-				for _, taskID := range args {
-					if err := s.fsClient.Call(ctx, filestation.APISearch, "clean", makeValues("taskid", taskID), nil); err != nil {
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "results <task-id>",
+			Short: "Get search results",
+			Args:  cobra.ExactArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return ac.withSession(cmd, joinCommand("fs", "search", "results"), func(ctx context.Context, s *session) (any, error) {
+					params := makeValues("taskid", args[0], "offset", "0", "limit", "0")
+					var out map[string]any
+					if err := s.fsClient.Call(ctx, filestation.APISearch, "list", params, &out); err != nil {
 						return nil, err
 					}
-				}
-				if ac.opts.JSON {
-					return map[string]any{"cleared": true, "task_ids": args}, nil
-				}
-				printKVBlock(ac.out, "Search", []kvField{
-					{Label: "Cleared", Value: "true"},
-					{Label: "Task IDs", Value: strings.Join(args, ", ")},
+					if ac.opts.JSON {
+						return out, nil
+					}
+					files := filestation.MapSliceAny(out["files"])
+					rows := make([][]string, 0, len(files))
+					for _, f := range files {
+						rows = append(rows, []string{filestation.ValueFromMap(f, "path"), filestation.ValueFromMap(f, "name")})
+					}
+					printTable(ac.out, []string{"Path", "Name"}, rows)
+					return nil, nil
 				})
-				return nil, nil
-			})
+			},
 		},
-	}
+		&cobra.Command{
+			Use:   "stop <task-id>",
+			Short: "Stop search task",
+			Args:  cobra.ExactArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return ac.withSession(cmd, joinCommand("fs", "search", "stop"), func(ctx context.Context, s *session) (any, error) {
+					if err := s.fsClient.Call(ctx, filestation.APISearch, "stop", makeValues("taskid", args[0]), nil); err != nil {
+						return nil, err
+					}
+					if ac.opts.JSON {
+						return map[string]any{"task_id": args[0], "stopped": true}, nil
+					}
+					printKVBlock(ac.out, "Search Stop", []kvField{{Label: "Task ID", Value: args[0]}})
+					return nil, nil
+				})
+			},
+		},
+		&cobra.Command{
+			Use:   "clear <task-id> [<task-id>...]",
+			Short: "Clear search tasks",
+			Args:  cobra.MinimumNArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return ac.withSession(cmd, joinCommand("fs", "search", "clear"), func(ctx context.Context, s *session) (any, error) {
+					for _, taskID := range args {
+						if err := s.fsClient.Call(ctx, filestation.APISearch, "clean", makeValues("taskid", taskID), nil); err != nil {
+							return nil, err
+						}
+					}
+					if ac.opts.JSON {
+						return map[string]any{"cleared": true, "task_ids": args}, nil
+					}
+					printKVBlock(ac.out, "Search", []kvField{
+						{Label: "Cleared", Value: "true"},
+						{Label: "Task IDs", Value: strings.Join(args, ", ")},
+					})
+					return nil, nil
+				})
+			},
+		},
+	)
+	return cmd
 }
 
 func newTaskStartCmd(ac *appContext, apiKey, cmdName, title, method string, paramsFn func(args []string) (map[string]string, error)) *cobra.Command {
@@ -735,13 +712,13 @@ func newTaskStartCmd(ac *appContext, apiKey, cmdName, title, method string, para
 	return cmd
 }
 
-func newTaskStatusCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Command {
+func newTaskStatusCmd(ac *appContext, apiKey, parentName, title string) *cobra.Command {
 	return &cobra.Command{
-		Use:   fmt.Sprintf("%s <task-id>", cmdName),
+		Use:   "status <task-id>",
 		Short: title,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withSession(cmd, joinCommand("fs", cmdName), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("fs", parentName, "status"), func(ctx context.Context, s *session) (any, error) {
 				var out map[string]any
 				if err := s.fsClient.Call(ctx, apiKey, "status", makeValues("taskid", args[0]), &out); err != nil {
 					return nil, err
@@ -756,13 +733,13 @@ func newTaskStatusCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Comm
 	}
 }
 
-func newTaskStopCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Command {
+func newTaskStopCmd(ac *appContext, apiKey, parentName, title string) *cobra.Command {
 	return &cobra.Command{
-		Use:   fmt.Sprintf("%s <task-id>", cmdName),
+		Use:   "stop <task-id>",
 		Short: title,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withSession(cmd, joinCommand("fs", cmdName), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("fs", parentName, "stop"), func(ctx context.Context, s *session) (any, error) {
 				if err := s.fsClient.Call(ctx, apiKey, "stop", makeValues("taskid", args[0]), nil); err != nil {
 					return nil, err
 				}
@@ -777,35 +754,29 @@ func newTaskStopCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Comman
 }
 
 func newFSDirSizeCmd(ac *appContext) *cobra.Command {
-	return newTaskStartCmd(ac, filestation.APIDirSize, "dir-size", "Calculate directory size", "start", func(args []string) (map[string]string, error) {
+	cmd := newTaskStartCmd(ac, filestation.APIDirSize, "dir-size", "Calculate directory size", "start", func(args []string) (map[string]string, error) {
 		j, err := filestation.EncodeJSON(args)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]string{"path": j}, nil
 	})
-}
-
-func newFSDirSizeStatusCmd(ac *appContext) *cobra.Command {
-	return newTaskStatusCmd(ac, filestation.APIDirSize, "dir-size-status", "Check dir size status")
-}
-
-func newFSDirSizeStopCmd(ac *appContext) *cobra.Command {
-	return newTaskStopCmd(ac, filestation.APIDirSize, "dir-size-stop", "Stop dir size calculation")
+	cmd.AddCommand(
+		newTaskStatusCmd(ac, filestation.APIDirSize, "dir-size", "Check dir size status"),
+		newTaskStopCmd(ac, filestation.APIDirSize, "dir-size", "Stop dir size calculation"),
+	)
+	return cmd
 }
 
 func newFSMD5Cmd(ac *appContext) *cobra.Command {
-	return newTaskStartCmd(ac, filestation.APIMD5, "md5", "Calculate MD5 checksum", "start", func(args []string) (map[string]string, error) {
+	cmd := newTaskStartCmd(ac, filestation.APIMD5, "md5", "Calculate MD5 checksum", "start", func(args []string) (map[string]string, error) {
 		return map[string]string{"file_path": args[0]}, nil
 	})
-}
-
-func newFSMD5StatusCmd(ac *appContext) *cobra.Command {
-	return newTaskStatusCmd(ac, filestation.APIMD5, "md5-status", "Check MD5 status")
-}
-
-func newFSMD5StopCmd(ac *appContext) *cobra.Command {
-	return newTaskStopCmd(ac, filestation.APIMD5, "md5-stop", "Stop MD5 calculation")
+	cmd.AddCommand(
+		newTaskStatusCmd(ac, filestation.APIMD5, "md5", "Check MD5 status"),
+		newTaskStopCmd(ac, filestation.APIMD5, "md5", "Stop MD5 calculation"),
+	)
+	return cmd
 }
 
 func newFSExtractCmd(ac *appContext) *cobra.Command {
@@ -832,15 +803,11 @@ func newFSExtractCmd(ac *appContext) *cobra.Command {
 	cmd.Flags().BoolVar(&keepDir, "keep-dir", false, "Keep directory structure")
 	cmd.Flags().BoolVar(&createSubfolder, "create-subfolder", false, "Create subfolder")
 	cmd.Flags().StringVar(&password, "password", "", "Archive password")
+	cmd.AddCommand(
+		newTaskStatusCmd(ac, filestation.APIExtract, "extract", "Check extract status"),
+		newTaskStopCmd(ac, filestation.APIExtract, "extract", "Stop extract task"),
+	)
 	return cmd
-}
-
-func newFSExtractStatusCmd(ac *appContext) *cobra.Command {
-	return newTaskStatusCmd(ac, filestation.APIExtract, "extract-status", "Check extract status")
-}
-
-func newFSExtractStopCmd(ac *appContext) *cobra.Command {
-	return newTaskStopCmd(ac, filestation.APIExtract, "extract-stop", "Stop extract task")
 }
 
 func newFSCompressCmd(ac *appContext) *cobra.Command {
@@ -871,15 +838,11 @@ func newFSCompressCmd(ac *appContext) *cobra.Command {
 	cmd.Flags().IntVar(&level, "level", 5, "Compression level")
 	cmd.Flags().StringVar(&mode, "mode", "add", "add|store")
 	cmd.Flags().StringVar(&password, "password", "", "Archive password")
+	cmd.AddCommand(
+		newTaskStatusCmd(ac, filestation.APICompress, "compress", "Check compress status"),
+		newTaskStopCmd(ac, filestation.APICompress, "compress", "Stop compress task"),
+	)
 	return cmd
-}
-
-func newFSCompressStatusCmd(ac *appContext) *cobra.Command {
-	return newTaskStatusCmd(ac, filestation.APICompress, "compress-status", "Check compress status")
-}
-
-func newFSCompressStopCmd(ac *appContext) *cobra.Command {
-	return newTaskStopCmd(ac, filestation.APICompress, "compress-stop", "Stop compress task")
 }
 
 func newFSTasksCmd(ac *appContext) *cobra.Command {
@@ -955,16 +918,15 @@ func newFSTasksCmd(ac *appContext) *cobra.Command {
 }
 
 func newFSTasksClearCmd(ac *appContext) *cobra.Command {
-	var ids []string
-	cmd := &cobra.Command{
-		Use:   "tasks-clear",
+	return &cobra.Command{
+		Use:   "tasks-clear [<task-id>...]",
 		Short: "Clear finished background tasks",
-		Args:  cobra.NoArgs,
+		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ac.withSession(cmd, joinCommand("fs", "tasks-clear"), func(ctx context.Context, s *session) (any, error) {
 				params := makeValues()
-				if len(ids) > 0 {
-					j, err := filestation.EncodeJSON(ids)
+				if len(args) > 0 {
+					j, err := filestation.EncodeJSON(args)
 					if err != nil {
 						return nil, err
 					}
@@ -974,15 +936,13 @@ func newFSTasksClearCmd(ac *appContext) *cobra.Command {
 					return nil, err
 				}
 				if ac.opts.JSON {
-					return map[string]any{"cleared": true, "task_ids": ids}, nil
+					return map[string]any{"cleared": true, "task_ids": args}, nil
 				}
 				printKVBlock(ac.out, "Tasks Clear", []kvField{{Label: "Cleared", Value: "true"}})
 				return nil, nil
 			})
 		},
 	}
-	cmd.Flags().StringSliceVar(&ids, "task-id", nil, "Task IDs")
-	return cmd
 }
 
 

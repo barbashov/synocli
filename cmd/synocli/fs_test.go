@@ -35,9 +35,9 @@ func TestFSSearchRequiresPattern(t *testing.T) {
 
 func TestFSSearchClearRequiresTaskID(t *testing.T) {
 	ac := &appContext{}
-	cmd := newFSSearchClearCmd(ac)
-	cmd.SetArgs([]string{})
-	err := cmd.Execute()
+	searchCmd := newFSSearchCmd(ac)
+	searchCmd.SetArgs([]string{"clear"})
+	err := searchCmd.Execute()
 	if err == nil {
 		t.Fatal("expected error")
 	}
