@@ -112,6 +112,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: synocli-*
           merge-multiple: true
 
       - name: Generate checksums
