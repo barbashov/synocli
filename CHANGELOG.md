@@ -20,6 +20,27 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.3.2] - 2026-03-27
+
+### Added
+- `make build-release VERSION=vX.Y.Z` now produces cross-platform release archives for linux/darwin/windows on amd64/arm64 and writes `dist/SHA256SUMS`.
+- `make build-platform VERSION=vX.Y.Z GOOS=<os> GOARCH=<arch>` and `make checksums` targets for release artifact workflows.
+
+### Changed
+- CI now builds release archives on `v*` tag pushes and publishes a GitHub Release with all platform binaries and checksums.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "Tag pushes now publish GitHub Release binary assets for linux/darwin/windows amd64+arm64 with SHA256SUMS."
+skill_update_action: "Update release automation docs in skills that mention distribution channels."
+```
+
 ## [0.3.1] - 2026-03-27
 
 ### Changed

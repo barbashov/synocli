@@ -116,6 +116,14 @@ make release-check
 make release VERSION=v0.1.0
 ```
 
+- Build release archives locally (linux/macos/windows for amd64/arm64) with checksums:
+
+```bash
+make build-release VERSION=v0.1.0
+```
+
+- Pushing a `vX.Y.Z` tag creates a GitHub Release and uploads all platform archives plus `SHA256SUMS`.
+
 ## Output Modes
 
 Human mode (default):
