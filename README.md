@@ -90,6 +90,7 @@ Download Station:
 ./bin/synocli ds list
 ./bin/synocli ds add "https://example.com/file.iso"
 ./bin/synocli ds delete dbid_1
+./bin/synocli ds cleanup -y
 ```
 
 File Station:

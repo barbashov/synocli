@@ -1,13 +1,17 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"synocli/internal/apperr"
 	"synocli/internal/cmdutil"
@@ -24,6 +28,7 @@ func newDSCmd(ac *appContext) *cobra.Command {
 		newDSPauseCmd(ac),
 		newDSResumeCmd(ac),
 		newDSDeleteCmd(ac),
+		newDSCleanupCmd(ac),
 		newDSWaitCmd(ac),
 	)
 	return cmd
@@ -210,6 +215,113 @@ func newDSDeleteCmd(ac *appContext) *cobra.Command {
 	return cmd
 }
 
+func newDSCleanupCmd(ac *appContext) *cobra.Command {
+	var includeSeeding bool
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "cleanup",
+		Short: "Delete finished downloads while keeping data intact",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return ac.withSession(cmd, joinCommand("ds", "cleanup"), func(ctx context.Context, s *session) (any, error) {
+				tasks, err := s.dsClient.List(ctx)
+				if err != nil {
+					return nil, err
+				}
+				statuses := cleanupStatuses(includeSeeding)
+					matchedTasks := cleanupTasks(tasks, statuses)
+					ids := cleanupTaskIDs(matchedTasks)
+					base := map[string]any{
+						"include_seeding": cleanupIncludesSeeding(statuses),
+						"matched_count":   len(ids),
+						"matched_task_ids": ids,
+						"data_kept_intact": true,
+					}
+				if len(ids) == 0 {
+					base["deleted_count"] = 0
+					base["failed_count"] = 0
+					base["deleted_task_ids"] = []string{}
+					base["failed_task_ids"] = []string{}
+					base["failed_tasks"] = []map[string]any{}
+					if ac.opts.JSON {
+						return base, nil
+					}
+					printCleanupSummary(ac.out, statuses, len(ids), 0, 0)
+					return nil, nil
+				}
+				if !ac.opts.JSON && !yes {
+					confirmed, err := promptCleanupConfirmation(ac.stdin, ac.out, matchedTasks, statuses)
+					if err != nil {
+						return nil, err
+					}
+					if !confirmed {
+						return nil, apperr.New("cancelled", "cleanup cancelled", 1)
+					}
+				}
+				if err := s.dsClient.Delete(ctx, ids); err != nil {
+					var apiErr *downloadstation.APIError
+					if errors.As(err, &apiErr) && len(apiErr.FailedTasks) > 0 {
+						failedTasks := make([]map[string]any, 0, len(apiErr.FailedTasks))
+						failedSet := make(map[string]struct{}, len(apiErr.FailedTasks))
+						failedIDs := make([]string, 0, len(apiErr.FailedTasks))
+						for _, ft := range apiErr.FailedTasks {
+							failedTasks = append(failedTasks, map[string]any{"id": ft.ID, "code": ft.Code})
+							if ft.ID == "" {
+								continue
+							}
+							if _, ok := failedSet[ft.ID]; !ok {
+								failedSet[ft.ID] = struct{}{}
+								failedIDs = append(failedIDs, ft.ID)
+							}
+						}
+						deletedIDs := make([]string, 0, len(ids))
+						for _, id := range ids {
+							if _, failed := failedSet[id]; !failed {
+								deletedIDs = append(deletedIDs, id)
+							}
+						}
+						details := map[string]any{
+							"include_seeding": cleanupIncludesSeeding(statuses),
+							"matched_count":   len(ids),
+							"deleted_count":   len(deletedIDs),
+							"failed_count":    len(failedTasks),
+							"matched_task_ids": ids,
+							"deleted_task_ids": deletedIDs,
+							"failed_task_ids": failedIDs,
+							"failed_tasks":    failedTasks,
+							"data_kept_intact": true,
+						}
+						if !ac.opts.JSON {
+							printCleanupSummary(ac.out, statuses, len(ids), len(deletedIDs), len(failedTasks))
+						}
+						return nil, &apperr.Error{
+							Code:     "partial_failure",
+							Message:  "cleanup completed with partial failures",
+							ExitCode: 1,
+							Details:  details,
+							Err:      err,
+						}
+					}
+					return nil, err
+				}
+				base["deleted_count"] = len(ids)
+				base["failed_count"] = 0
+				base["deleted_task_ids"] = ids
+				base["failed_task_ids"] = []string{}
+				base["failed_tasks"] = []map[string]any{}
+				if ac.opts.JSON {
+					return base, nil
+				}
+				printCleanupSummary(ac.out, statuses, len(ids), len(ids), 0)
+				return nil, nil
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&includeSeeding, "include-seeding", "s", false, "Also cleanup seeding tasks")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
+	return cmd
+}
+
 func actionWithIDs(ac *appContext, action string, run func(context.Context, *session, []string) error) *cobra.Command {
 	return &cobra.Command{
 		Use:   fmt.Sprintf("%s <task-id> [<task-id>...]", action),
@@ -232,6 +344,100 @@ func actionWithIDs(ac *appContext, action string, run func(context.Context, *ses
 			})
 		},
 	}
+}
+
+func cleanupStatuses(includeSeeding bool) map[string]struct{} {
+	out := map[string]struct{}{"finished": {}}
+	if includeSeeding {
+		out["seeding"] = struct{}{}
+	}
+	return out
+}
+
+func cleanupIncludesSeeding(statusSet map[string]struct{}) bool {
+	_, ok := statusSet["seeding"]
+	return ok
+}
+
+func cleanupTasks(tasks []downloadstation.Task, statusSet map[string]struct{}) []downloadstation.Task {
+	out := make([]downloadstation.Task, 0, len(tasks))
+	for _, task := range tasks {
+		if _, ok := statusSet[downloadstation.NormalizeStatus(task.Status)]; ok {
+			out = append(out, task)
+		}
+	}
+	return out
+}
+
+func cleanupTaskIDs(tasks []downloadstation.Task) []string {
+	out := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, task.ID)
+	}
+	return out
+}
+
+func promptCleanupConfirmation(in io.Reader, out io.Writer, tasks []downloadstation.Task, statusSet map[string]struct{}) (bool, error) {
+	if !isTTYReader(in) {
+		return false, apperr.New("validation_error", "cleanup confirmation requires an interactive terminal; pass --yes (-y) to skip prompt", 1)
+	}
+	printCleanupPreview(out, tasks, statusSet)
+	statusList := "finished"
+	if _, ok := statusSet["seeding"]; ok {
+		statusList = "finished, seeding"
+	}
+	_, _ = fmt.Fprintf(out, "Cleanup will delete %d Download Station task(s) with status: %s.\n", len(tasks), statusList)
+	_, _ = fmt.Fprintln(out, "Downloaded data/files will be kept intact.")
+	_, _ = fmt.Fprint(out, "Proceed? [y/N]: ")
+	reader := bufio.NewReader(in)
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, apperr.Wrap("internal_error", "read confirmation input", 1, err)
+	}
+	return isAffirmativeAnswer(line), nil
+}
+
+func isAffirmativeAnswer(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "y", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTTYReader(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	return term.IsTerminal(int(f.Fd()))
+}
+
+func printCleanupSummary(w io.Writer, statusSet map[string]struct{}, matched, deleted, failed int) {
+	statusList := "finished"
+	if _, ok := statusSet["seeding"]; ok {
+		statusList = "finished, seeding"
+	}
+	cmdutil.PrintKVBlock(w, "Cleanup", []cmdutil.KVField{
+		{Label: "Statuses", Value: statusList},
+		{Label: "Matched", Value: fmt.Sprintf("%d", matched)},
+		{Label: "Deleted", Value: fmt.Sprintf("%d", deleted)},
+		{Label: "Failed", Value: fmt.Sprintf("%d", failed)},
+		{Label: "Data", Value: "kept intact"},
+	})
+}
+
+func printCleanupPreview(w io.Writer, tasks []downloadstation.Task, statusSet map[string]struct{}) {
+	statusFilter := "finished"
+	if _, ok := statusSet["seeding"]; ok {
+		statusFilter = "finished,seeding"
+	}
+	cmdutil.PrintKVBlock(w, "Downloads", []cmdutil.KVField{
+		{Label: "Tasks", Value: fmt.Sprintf("%d", len(tasks))},
+		{Label: "Status Filter", Value: statusFilter},
+	})
+	printTaskTable(w, tasks)
 }
 
 func newDSWaitCmd(ac *appContext) *cobra.Command {

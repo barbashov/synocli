@@ -20,6 +20,30 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.0] - 2026-03-27
+
+### Added
+- New `ds cleanup` command to delete finished Download Station task records while keeping downloaded data intact.
+- New `-s, --include-seeding` and `-y, --yes` flags for `ds cleanup`.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added:
+  - "ds cleanup"
+commands_changed: []
+flags_added:
+  - "ds cleanup --include-seeding (-s)"
+  - "ds cleanup --yes (-y)"
+flags_changed: []
+behavior_changes:
+  - "ds cleanup prompts for confirmation in CLI mode unless --yes is set; JSON mode never prompts."
+  - "ds cleanup confirmation shows the same task table style as ds list."
+  - "ds cleanup default scope is finished tasks only; use --include-seeding to include seeding tasks."
+  - "ds cleanup removes task records only and preserves downloaded data."
+skill_update_action: "Update synocli command references for ds cleanup, -s/--include-seeding, and -y/--yes confirmation bypass."
+```
+
 ## [0.3.4] - 2026-03-27
 
 ### Added

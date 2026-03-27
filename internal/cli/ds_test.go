@@ -15,6 +15,29 @@ func TestDSCommandAliases(t *testing.T) {
 	}
 }
 
+func TestDSIncludesCleanupCommand(t *testing.T) {
+	cmd := newDSCmd(&appContext{})
+	cleanup, _, err := cmd.Find([]string{"cleanup"})
+	if err != nil {
+		t.Fatalf("find cleanup: %v", err)
+	}
+	if cleanup == nil || cleanup.Name() != "cleanup" {
+		t.Fatalf("cleanup command not found: %#v", cleanup)
+	}
+}
+
+func TestDSCleanupFlags(t *testing.T) {
+	cmd := newDSCleanupCmd(&appContext{})
+	include := cmd.Flags().Lookup("include-seeding")
+	if include == nil || include.Shorthand != "s" {
+		t.Fatalf("expected --include-seeding shorthand -s, got %#v", include)
+	}
+	yes := cmd.Flags().Lookup("yes")
+	if yes == nil || yes.Shorthand != "y" {
+		t.Fatalf("expected --yes shorthand -y, got %#v", yes)
+	}
+}
+
 func TestWaitRejectsNonPositiveInterval(t *testing.T) {
 	tests := []string{"0s", "-1s"}
 	for _, interval := range tests {
@@ -95,5 +118,65 @@ func TestPrintTaskTableIncludesETAColumn(t *testing.T) {
 	}
 	if !strings.Contains(got, "6 seconds") {
 		t.Fatalf("table missing ETA value: %q", got)
+	}
+}
+
+func TestCleanupTaskIDsFiltersNormalizedStatuses(t *testing.T) {
+	tasks := []downloadstation.Task{
+		{ID: "a", Status: "finished"},
+		{ID: "b", Status: "seeding"},
+		{ID: "c", Status: "downloading"},
+		{ID: "d", Status: "5"},
+		{ID: "e", Status: "7"},
+	}
+	finishedOnly := cleanupTaskIDs(cleanupTasks(tasks, cleanupStatuses(false)))
+	if got := strings.Join(finishedOnly, ","); got != "a,d" {
+		t.Fatalf("finished-only ids=%q want a,d", got)
+	}
+	withSeeding := cleanupTaskIDs(cleanupTasks(tasks, cleanupStatuses(true)))
+	if got := strings.Join(withSeeding, ","); got != "a,b,d,e" {
+		t.Fatalf("finished+seeding ids=%q want a,b,d,e", got)
+	}
+}
+
+func TestIsAffirmativeAnswer(t *testing.T) {
+	if !isAffirmativeAnswer("y") || !isAffirmativeAnswer("YES\n") {
+		t.Fatal("expected y/yes to be accepted")
+	}
+	if isAffirmativeAnswer("n") || isAffirmativeAnswer("") || isAffirmativeAnswer("ok") {
+		t.Fatal("unexpected affirmative parse")
+	}
+}
+
+func TestPromptCleanupConfirmationRejectsNonTTY(t *testing.T) {
+	var out bytes.Buffer
+	confirmed, err := promptCleanupConfirmation(strings.NewReader("yes\n"), &out, []downloadstation.Task{{ID: "a"}}, cleanupStatuses(true))
+	if err == nil {
+		t.Fatal("expected non-tty error")
+	}
+	if confirmed {
+		t.Fatal("expected confirmed=false on non-tty")
+	}
+	if !strings.Contains(err.Error(), "pass --yes (-y)") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrintCleanupPreviewUsesListStyleTable(t *testing.T) {
+	var out bytes.Buffer
+	tasks := []downloadstation.Task{
+		{
+			ID:     "dbid_1",
+			Title:  "ubuntu.iso",
+			Status: "finished",
+			Type:   "bt",
+		},
+	}
+	printCleanupPreview(&out, tasks, cleanupStatuses(true))
+	got := out.String()
+	for _, want := range []string{"Downloads", "Tasks", "Status Filter", "ID", "Title", "Status", "finished,seeding", "dbid_1"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("cleanup preview missing %q: %q", want, got)
+		}
 	}
 }
