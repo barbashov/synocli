@@ -20,6 +20,25 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.3.1] - 2026-03-27
+
+### Changed
+- CLI layer moved from `cmd/synocli/` (`package main`) into `internal/cli/` and `internal/cmdutil/` packages. Pure structural refactor; no behaviour change.
+
+### Fixed
+- E2e test: magnet task was not deleted before `assert_task_deleted`, causing a spurious failure when the torrent task was chosen for the pause/resume cycle instead.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes: []
+skill_update_action: "No skill update required."
+```
+
 ## [0.3.0] - 2026-03-27
 
 ### Added

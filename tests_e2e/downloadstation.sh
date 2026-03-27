@@ -590,6 +590,9 @@ main() {
   if [[ "$torrent_task_id" != "$paused_task_id" ]]; then
     delete_task_and_cleanup_strict "$torrent_task_id"
   fi
+  if [[ "$magnet_task_id" != "$paused_task_id" ]]; then
+    delete_task_and_cleanup_strict "$magnet_task_id"
+  fi
 
   assert_task_deleted "$magnet_task_id"
   assert_task_deleted "$url_task_id"
