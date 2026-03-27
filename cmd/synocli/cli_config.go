@@ -42,13 +42,7 @@ func newCLIConfigInitCmd(ac *appContext) *cobra.Command {
 			if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 				return ac.outputError(joinCommand("cli-config", "init"), "", start, apperr.Wrap("internal_error", "create config directory", 1, err))
 			}
-			content := buildConfigContent(config.FileOptions{
-				Endpoint:    ac.opts.Endpoint,
-				User:        ac.opts.User,
-				Password:    ac.opts.Password,
-				InsecureTLS: ac.opts.InsecureTLS,
-				Timeout:     ac.opts.Timeout,
-			})
+			content := buildConfigContent(ac.opts)
 			if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
 				return ac.outputError(joinCommand("cli-config", "init"), "", start, apperr.Wrap("internal_error", "write config file", 1, err))
 			}
@@ -128,7 +122,7 @@ func redactPassword(v string) string {
 	return "<redacted>"
 }
 
-func buildConfigContent(cfg config.FileOptions) string {
+func buildConfigContent(cfg config.GlobalOptions) string {
 	var b strings.Builder
 	_, _ = fmt.Fprintf(&b, "endpoint=%s\n", cfg.Endpoint)
 	_, _ = fmt.Fprintf(&b, "user=%s\n", cfg.User)

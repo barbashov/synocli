@@ -50,6 +50,8 @@ func (e *jsonOutputHandledError) Unwrap() error {
 	return e.err
 }
 
+const synologySession = "synocli"
+
 var taskAPIRe = regexp.MustCompile(`^SYNO\.DownloadStation(\d*)\.Task$`)
 
 func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
@@ -95,10 +97,6 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 	if err != nil {
 		return a.outputError(commandName, runOpts.Endpoint, start, apperr.Wrap("validation_error", "invalid endpoint", 1, err))
 	}
-	if err := runOpts.ResolvePassword(a.stdin); err != nil {
-		return a.outputError(commandName, u.String(), start, apperr.Wrap("validation_error", "invalid auth options", 1, err))
-	}
-	a.opts = runOpts
 
 	hc, err := httpclient.New(httpclient.Options{InsecureTLS: runOpts.InsecureTLS, Timeout: runOpts.Timeout, Debug: runOpts.Debug, DebugOut: a.err})
 	if err != nil {
@@ -127,45 +125,121 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 	}
 
 	authClient := &auth.Client{Endpoint: u.String(), Path: authPath, Version: authVersion, HTTP: hc}
-	sid, err := authClient.Login(ctx, runOpts.User, runOpts.Password, "synocli")
-	if err != nil {
-		return a.outputError(commandName, u.String(), start, apperr.Wrap("auth_failed", "authentication failed", 2, err))
-	}
+
+	var sessionPath string
+	logoutSID := ""
 	defer func() {
-		_ = authClient.Logout(context.Background(), sid, "synocli")
+		if logoutSID != "" {
+			_ = authClient.Logout(context.Background(), logoutSID, synologySession)
+		}
 	}()
 
-	dsClient, err := downloadstation.NewClient(u.String(), sid, hc, dsPath, dsVersion, dsAPIName)
-	if err != nil {
-		return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize download station client", 1, err))
-	}
-	fsClient, err := filestation.NewClient(u.String(), sid, hc, fsAPIs)
-	if err != nil {
-		return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize file station client", 1, err))
+	// loginAndSave resolves credentials if not yet done, logs in, and persists
+	// the new SID when reuse_session is enabled. It updates logoutSID so the
+	// deferred cleanup knows whether to call Logout on exit.
+	loginAndSave := func() (string, error) {
+		if runOpts.Password == "" {
+			if err := runOpts.ResolvePassword(a.stdin); err != nil {
+				return "", a.outputError(commandName, u.String(), start, apperr.Wrap("validation_error", "invalid auth options", 1, err))
+			}
+		}
+		newSID, loginErr := authClient.Login(ctx, runOpts.User, runOpts.Password, synologySession)
+		if loginErr != nil {
+			return "", a.outputError(commandName, u.String(), start, apperr.Wrap("auth_failed", "authentication failed", 2, loginErr))
+		}
+		if runOpts.ReuseSession {
+			if writeErr := config.WriteSession(sessionPath, newSID); writeErr != nil {
+				if runOpts.Debug {
+					_, _ = fmt.Fprintf(a.err, "[debug] write session: %v\n", writeErr)
+				}
+				logoutSID = newSID
+			} else {
+				logoutSID = ""
+			}
+		} else {
+			logoutSID = newSID
+		}
+		return newSID, nil
 	}
 
-	s := &session{
-		endpoint:    u.String(),
-		start:       start,
-		authClient:  authClient,
-		dsClient:    dsClient,
-		fsClient:    fsClient,
-		apiVersions: apiVersions,
+	var sid string
+	if runOpts.ReuseSession {
+		sessionPath = config.SessionPathFromConfig(runOpts.ConfigPath)
+		if cached, loadErr := config.LoadSession(sessionPath); loadErr != nil {
+			if runOpts.Debug {
+				_, _ = fmt.Fprintf(a.err, "[debug] load session: %v\n", loadErr)
+			}
+		} else {
+			sid = cached
+		}
 	}
-	data, err := fn(ctx, s)
-	if err != nil {
-		return a.outputError(commandName, u.String(), start, toAppError(err))
+
+	if sid == "" {
+		var err error
+		sid, err = loginAndSave()
+		if err != nil {
+			return err
+		}
+	}
+	a.opts = runOpts
+
+	runWithSID := func(id string) (any, error) {
+		dsClient, err := downloadstation.NewClient(u.String(), id, hc, dsPath, dsVersion, dsAPIName)
+		if err != nil {
+			return nil, apperr.Wrap("internal_error", "initialize download station client", 1, err)
+		}
+		fsClient, err := filestation.NewClient(u.String(), id, hc, fsAPIs)
+		if err != nil {
+			return nil, apperr.Wrap("internal_error", "initialize file station client", 1, err)
+		}
+		return fn(ctx, &session{
+			endpoint:    u.String(),
+			start:       start,
+			authClient:  authClient,
+			dsClient:    dsClient,
+			fsClient:    fsClient,
+			apiVersions: apiVersions,
+		})
+	}
+
+	data, fnErr := runWithSID(sid)
+
+	if fnErr != nil && runOpts.ReuseSession && isSessionExpiry(fnErr) {
+		_ = config.DeleteSession(sessionPath)
+		newSID, err := loginAndSave()
+		if err != nil {
+			return err
+		}
+		a.opts = runOpts
+		data, fnErr = runWithSID(newSID)
+	}
+
+	if fnErr != nil {
+		return a.outputError(commandName, u.String(), start, toAppError(fnErr))
 	}
 	if data == nil {
 		return nil
 	}
 	env := output.NewEnvelope(true, commandName, u.String(), start)
 	env.Data = data
-	env.Meta.APIVersion = s.apiVersions
+	env.Meta.APIVersion = apiVersions
 	if err := output.WriteJSON(a.out, env); err != nil {
 		return apperr.Wrap("internal_error", "write json output", 1, err)
 	}
 	return nil
+}
+
+func isSessionExpiry(err error) bool {
+	var dsErr *downloadstation.APIError
+	if errors.As(err, &dsErr) {
+		return dsErr.Code == 106 || dsErr.Code == 107
+	}
+	var fsErr *filestation.APIError
+	if errors.As(err, &fsErr) {
+		c := fsErr.EffectiveCode()
+		return c == 106 || c == 107
+	}
+	return false
 }
 
 func toAppError(err error) error {
@@ -282,6 +356,7 @@ func (a *appContext) resolveRuntimeOptions(cmd *cobra.Command) (config.GlobalOpt
 	if !cmd.Flags().Lookup("timeout").Changed && fileCfg.Timeout > 0 {
 		out.Timeout = fileCfg.Timeout
 	}
+	out.ReuseSession = fileCfg.ReuseSession
 
 	if out.CredentialsFile != "" {
 		if cmd.Flags().Lookup("user").Changed || cmd.Flags().Lookup("password").Changed || out.PasswordStdin {

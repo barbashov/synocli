@@ -24,14 +24,7 @@ type GlobalOptions struct {
 	Timeout         time.Duration
 	JSON            bool
 	Debug           bool
-}
-
-type FileOptions struct {
-	Endpoint    string
-	User        string
-	Password    string
-	InsecureTLS bool
-	Timeout     time.Duration
+	ReuseSession    bool
 }
 
 func ValidateEndpoint(raw string) (*url.URL, error) {
@@ -85,29 +78,29 @@ func DefaultConfigPath() (string, error) {
 	return filepath.Join(home, ".synocli", "config"), nil
 }
 
-func LoadConfigFile(path string, required bool) (FileOptions, error) {
+func LoadConfigFile(path string, required bool) (GlobalOptions, error) {
 	if strings.TrimSpace(path) == "" {
-		return FileOptions{}, errors.New("config path is required")
+		return GlobalOptions{}, errors.New("config path is required")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) && !required {
-			return FileOptions{}, nil
+			return GlobalOptions{}, nil
 		}
-		return FileOptions{}, fmt.Errorf("read config file: %w", err)
+		return GlobalOptions{}, fmt.Errorf("read config file: %w", err)
 	}
 	if mode := info.Mode().Perm(); mode&0077 != 0 {
-		return FileOptions{}, fmt.Errorf("config file %s has too open permissions %04o; run: chmod 600 %s", path, mode, path)
+		return GlobalOptions{}, fmt.Errorf("config file %s has too open permissions %04o; run: chmod 600 %s", path, mode, path)
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return FileOptions{}, fmt.Errorf("read config file: %w", err)
+		return GlobalOptions{}, fmt.Errorf("read config file: %w", err)
 	}
-	return ParseFileOptions(string(b))
+	return ParseConfigFile(string(b))
 }
 
-func ParseFileOptions(content string) (FileOptions, error) {
-	var out FileOptions
+func ParseConfigFile(content string) (GlobalOptions, error) {
+	var out GlobalOptions
 	s := bufio.NewScanner(strings.NewReader(content))
 	lineNo := 0
 	for s.Scan() {
@@ -118,7 +111,7 @@ func ParseFileOptions(content string) (FileOptions, error) {
 		}
 		k, v, ok := strings.Cut(line, "=")
 		if !ok {
-			return FileOptions{}, fmt.Errorf("invalid config format at line %d", lineNo)
+			return GlobalOptions{}, fmt.Errorf("invalid config format at line %d", lineNo)
 		}
 		key := strings.ToLower(strings.TrimSpace(k))
 		value := strings.TrimSpace(v)
@@ -135,7 +128,7 @@ func ParseFileOptions(content string) (FileOptions, error) {
 			}
 			b, err := strconv.ParseBool(value)
 			if err != nil {
-				return FileOptions{}, fmt.Errorf("invalid config value for insecure_tls at line %d: %w", lineNo, err)
+				return GlobalOptions{}, fmt.Errorf("invalid config value for insecure_tls at line %d: %w", lineNo, err)
 			}
 			out.InsecureTLS = b
 		case "timeout":
@@ -144,15 +137,24 @@ func ParseFileOptions(content string) (FileOptions, error) {
 			}
 			d, err := time.ParseDuration(value)
 			if err != nil {
-				return FileOptions{}, fmt.Errorf("invalid config value for timeout at line %d: %w", lineNo, err)
+				return GlobalOptions{}, fmt.Errorf("invalid config value for timeout at line %d: %w", lineNo, err)
 			}
 			out.Timeout = d
+		case "reuse_session":
+			if value == "" {
+				continue
+			}
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return GlobalOptions{}, fmt.Errorf("invalid config value for reuse_session at line %d: %w", lineNo, err)
+			}
+			out.ReuseSession = b
 		default:
-			return FileOptions{}, fmt.Errorf("unknown config key %q at line %d", key, lineNo)
+			return GlobalOptions{}, fmt.Errorf("unknown config key %q at line %d", key, lineNo)
 		}
 	}
 	if err := s.Err(); err != nil {
-		return FileOptions{}, fmt.Errorf("read config file: %w", err)
+		return GlobalOptions{}, fmt.Errorf("read config file: %w", err)
 	}
 	return out, nil
 }

@@ -71,8 +71,8 @@ func TestResolvePasswordCredentialsFileWithFlagsConflict(t *testing.T) {
 	}
 }
 
-func TestParseFileOptions(t *testing.T) {
-	got, err := ParseFileOptions(strings.Join([]string{
+func TestParseConfigFile(t *testing.T) {
+	got, err := ParseConfigFile(strings.Join([]string{
 		"endpoint=https://example.com:5001",
 		"user=admin",
 		"password=secret",
@@ -80,7 +80,7 @@ func TestParseFileOptions(t *testing.T) {
 		"timeout=45s",
 	}, "\n"))
 	if err != nil {
-		t.Fatalf("ParseFileOptions: %v", err)
+		t.Fatalf("ParseConfigFile: %v", err)
 	}
 	if got.Endpoint != "https://example.com:5001" {
 		t.Fatalf("endpoint=%q", got.Endpoint)
@@ -93,6 +93,28 @@ func TestParseFileOptions(t *testing.T) {
 	}
 	if got.Timeout != 45*time.Second {
 		t.Fatalf("timeout=%s", got.Timeout)
+	}
+}
+
+func TestParseConfigFileReuseSession(t *testing.T) {
+	got, err := ParseConfigFile("reuse_session=true\n")
+	if err != nil {
+		t.Fatalf("ParseConfigFile: %v", err)
+	}
+	if !got.ReuseSession {
+		t.Fatal("expected ReuseSession=true")
+	}
+
+	got2, err := ParseConfigFile("reuse_session=false\n")
+	if err != nil {
+		t.Fatalf("ParseConfigFile false: %v", err)
+	}
+	if got2.ReuseSession {
+		t.Fatal("expected ReuseSession=false")
+	}
+
+	if _, err := ParseConfigFile("reuse_session=notbool\n"); err == nil {
+		t.Fatal("expected parse error for invalid bool")
 	}
 }
 
