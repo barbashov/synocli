@@ -22,7 +22,7 @@ func TestRootVersionFlag(t *testing.T) {
 	withBuildInfo("v0.1.0", "abc1234", "2026-03-27T00:00:00Z", func() {
 		var out, errOut bytes.Buffer
 		cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
-		cmd.SetArgs([]string{"--version"})
+		cmd.SetArgs([]string{"--no-update-check", "--version"})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute: %v", err)
 		}
@@ -39,7 +39,7 @@ func TestVersionCommandHuman(t *testing.T) {
 	withBuildInfo("v0.1.0", "abc1234", "2026-03-27T00:00:00Z", func() {
 		var out, errOut bytes.Buffer
 		cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
-		cmd.SetArgs([]string{"version"})
+		cmd.SetArgs([]string{"--no-update-check", "version"})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute: %v", err)
 		}
@@ -59,7 +59,7 @@ func TestVersionCommandJSON(t *testing.T) {
 	withBuildInfo("v0.1.0", "abc1234", "2026-03-27T00:00:00Z", func() {
 		var out, errOut bytes.Buffer
 		cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
-		cmd.SetArgs([]string{"--json", "version"})
+		cmd.SetArgs([]string{"--no-update-check", "--json", "version"})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute: %v", err)
 		}

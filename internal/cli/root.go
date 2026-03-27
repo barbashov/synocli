@@ -34,6 +34,10 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		Version:       versionValue(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			ac.maybeNotifyUpdate(cmd)
+			return nil
+		},
 	}
 	cmd.SetVersionTemplate("{{.Version}}\n")
 	cmd.SetOut(stdout)
@@ -48,8 +52,9 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&ac.opts.InsecureTLS, "insecure-tls", false, "Allow insecure TLS (self-signed certs)")
 	f.DurationVar(&ac.opts.Timeout, "timeout", 30*time.Second, "Request timeout")
 	f.BoolVar(&ac.opts.JSON, "json", false, "JSON output")
+	f.BoolVar(&ac.opts.NoUpdateCheck, "no-update-check", false, "Skip background update check for this invocation")
 	f.BoolVar(&ac.opts.Debug, "debug", false, "Debug request flow")
 
-	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac), newCLIConfigCmd(ac), newVersionCmd(ac))
+	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac), newCLIConfigCmd(ac), newCLIUpdateCmd(ac), newVersionCmd(ac))
 	return cmd
 }

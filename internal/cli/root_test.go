@@ -38,6 +38,7 @@ func newRuntimeOptionsTestContext(t *testing.T) (*appContext, *cobra.Command) {
 	f.DurationVar(&ac.opts.Timeout, "timeout", 30*time.Second, "")
 	f.BoolVar(&ac.opts.JSON, "json", false, "")
 	f.BoolVar(&ac.opts.Debug, "debug", false, "")
+	f.BoolVar(&ac.opts.NoUpdateCheck, "no-update-check", false, "")
 	return ac, cmd
 }
 

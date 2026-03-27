@@ -5,6 +5,13 @@ It currently focuses on Download Station (`ds`) and File Station (`fs`) workflow
 
 ## Quick Start
 
+Install latest release binary (Linux/macOS, including WSL2 Linux shells):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/barbashov/synocli/main/install.sh | bash
+synocli --version
+```
+
 Build natively:
 
 ```bash
@@ -123,6 +130,21 @@ make build-release VERSION=v0.1.0
 ```
 
 - Pushing a `vX.Y.Z` tag creates a GitHub Release and uploads all platform archives plus `SHA256SUMS`.
+
+## Self-Update
+
+Check and install the latest stable release from GitHub:
+
+```bash
+synocli cli-update
+```
+
+Normal command runs perform a periodic background update check (every ~24h) and suggest `synocli cli-update` when a newer version exists.
+To skip that check for one invocation, use:
+
+```bash
+synocli --no-update-check <command> ...
+```
 
 ## Output Modes
 

@@ -20,6 +20,33 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.3.3] - 2026-03-27
+
+### Added
+- New `cli-update` command to check GitHub Releases and auto-install a newer synocli binary.
+- New installer script:
+  - `curl -fsSL https://raw.githubusercontent.com/barbashov/synocli/main/install.sh | bash`
+  - Supports linux/darwin on amd64/arm64 (WSL2 follows linux flow).
+
+### Changed
+- Non-JSON commands now perform periodic background update checks and suggest `synocli cli-update` when a newer release exists.
+- Added global flag `--no-update-check` to skip the background update check for a single invocation.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added:
+  - "cli-update"
+commands_changed:
+  - "root command: periodic background update checks for non-JSON commands"
+flags_added:
+  - "--no-update-check (global)"
+flags_changed: []
+behavior_changes:
+  - "Non-JSON command runs now periodically check for a newer GitHub release and print an update hint."
+skill_update_action: "Update synocli usage skills to include install script, cli-update command, and --no-update-check flag."
+```
+
 ## [0.3.2] - 2026-03-27
 
 ### Added

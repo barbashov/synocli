@@ -24,6 +24,7 @@ type GlobalOptions struct {
 	Timeout         time.Duration
 	JSON            bool
 	Debug           bool
+	NoUpdateCheck   bool
 	ReuseSession    bool
 }
 
