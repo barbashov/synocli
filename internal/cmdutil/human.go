@@ -1,4 +1,4 @@
-package main
+package cmdutil
 
 import (
 	"fmt"
@@ -13,20 +13,20 @@ import (
 	"golang.org/x/term"
 )
 
-const ansiClearScreen = "\x1b[H\x1b[2J"
+const AnsiClearScreen = "\x1b[H\x1b[2J"
 
-type kvField struct {
+type KVField struct {
 	Label string
 	Value string
 }
 
-type humanUI struct {
+type HumanUI struct {
 	renderer *lipgloss.Renderer
-	styled   bool
-	tty      bool
+	Styled   bool
+	Tty      bool
 }
 
-func newHumanUI(w io.Writer) humanUI {
+func NewHumanUI(w io.Writer) HumanUI {
 	tty := isTTYWriter(w)
 	renderer := lipgloss.NewRenderer(w, termenv.WithTTY(tty))
 	noColor := termenv.EnvNoColor()
@@ -34,7 +34,7 @@ func newHumanUI(w io.Writer) humanUI {
 	if !styled {
 		renderer.SetColorProfile(termenv.Ascii)
 	}
-	return humanUI{renderer: renderer, styled: styled, tty: tty}
+	return HumanUI{renderer: renderer, Styled: styled, Tty: tty}
 }
 
 func isTTYWriter(w io.Writer) bool {
@@ -45,29 +45,29 @@ func isTTYWriter(w io.Writer) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-func (u humanUI) style() lipgloss.Style {
+func (u HumanUI) style() lipgloss.Style {
 	return u.renderer.NewStyle()
 }
 
-func (u humanUI) title(text string) string {
+func (u HumanUI) Title(text string) string {
 	s := u.style().Bold(true)
-	if u.styled {
+	if u.Styled {
 		s = s.Foreground(lipgloss.AdaptiveColor{Light: "27", Dark: "117"})
 	}
 	return s.Render(text)
 }
 
-func (u humanUI) muted(text string) string {
+func (u HumanUI) Muted(text string) string {
 	s := u.style()
-	if u.styled {
+	if u.Styled {
 		s = s.Foreground(lipgloss.AdaptiveColor{Light: "244", Dark: "245"})
 	}
 	return s.Render(text)
 }
 
-func (u humanUI) status(text, normalized string) string {
+func (u HumanUI) Status(text, normalized string) string {
 	s := u.style()
-	if u.styled {
+	if u.Styled {
 		switch normalized {
 		case "finished", "seeding":
 			s = s.Foreground(lipgloss.Color("42"))
@@ -84,9 +84,9 @@ func (u humanUI) status(text, normalized string) string {
 	return s.Render(text)
 }
 
-func (u humanUI) badge(kind string) string {
+func (u HumanUI) Badge(kind string) string {
 	upper := strings.ToUpper(kind)
-	if !u.styled {
+	if !u.Styled {
 		return upper
 	}
 	bg := lipgloss.Color("240")
@@ -106,15 +106,15 @@ func (u humanUI) badge(kind string) string {
 		Render(upper)
 }
 
-func printError(w io.Writer, err error) {
-	ui := newHumanUI(w)
-	_, _ = fmt.Fprintf(w, "%s %s\n", ui.badge("error"), err.Error())
+func PrintError(w io.Writer, err error) {
+	ui := NewHumanUI(w)
+	_, _ = fmt.Fprintf(w, "%s %s\n", ui.Badge("error"), err.Error())
 }
 
-func printKVBlock(w io.Writer, title string, fields []kvField) {
-	ui := newHumanUI(w)
+func PrintKVBlock(w io.Writer, title string, fields []KVField) {
+	ui := NewHumanUI(w)
 	if title != "" {
-		_, _ = fmt.Fprintln(w, ui.title(title))
+		_, _ = fmt.Fprintln(w, ui.Title(title))
 	}
 	maxLabel := 0
 	for _, f := range fields {
@@ -123,7 +123,7 @@ func printKVBlock(w io.Writer, title string, fields []kvField) {
 		}
 	}
 	label := ui.style().Bold(true).Width(maxLabel + 1)
-	if ui.styled {
+	if ui.Styled {
 		label = label.Foreground(lipgloss.AdaptiveColor{Light: "63", Dark: "111"})
 	}
 	for _, f := range fields {
@@ -131,8 +131,8 @@ func printKVBlock(w io.Writer, title string, fields []kvField) {
 	}
 }
 
-func printTable(w io.Writer, headers []string, rows [][]string) {
-	ui := newHumanUI(w)
+func PrintTable(w io.Writer, headers []string, rows [][]string) {
+	ui := NewHumanUI(w)
 	t := table.New().
 		Headers(headers...).
 		Rows(rows...).
@@ -140,20 +140,20 @@ func printTable(w io.Writer, headers []string, rows [][]string) {
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == table.HeaderRow {
 				s := ui.style().Bold(true)
-				if ui.styled {
+				if ui.Styled {
 					s = s.Foreground(lipgloss.AdaptiveColor{Light: "63", Dark: "111"})
 				}
 				return s
 			}
 			return ui.style()
 		})
-	if ui.styled {
+	if ui.Styled {
 		t = t.BorderStyle(ui.style().Foreground(lipgloss.AdaptiveColor{Light: "249", Dark: "238"}))
 	}
 	_, _ = fmt.Fprintln(w, t.Render())
 }
 
-func printWatchHeader(w io.Writer, snapTime time.Time, taskCount int, ids, statuses []string) {
+func PrintWatchHeader(w io.Writer, snapTime time.Time, taskCount int, ids, statuses []string) {
 	idFilter := "-"
 	if len(ids) > 0 {
 		idFilter = strings.Join(ids, ",")
@@ -162,7 +162,7 @@ func printWatchHeader(w io.Writer, snapTime time.Time, taskCount int, ids, statu
 	if len(statuses) > 0 {
 		statusFilter = strings.Join(statuses, ",")
 	}
-	printKVBlock(w, "Download Station Watch", []kvField{
+	PrintKVBlock(w, "Download Station Watch", []KVField{
 		{Label: "Timestamp", Value: snapTime.Format(time.RFC3339)},
 		{Label: "Tasks", Value: fmt.Sprintf("%d", taskCount)},
 		{Label: "ID Filter", Value: idFilter},

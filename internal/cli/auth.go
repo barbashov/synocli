@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"synocli/internal/cmdutil"
 	"synocli/internal/synology/apiinfo"
 )
 
@@ -27,7 +28,7 @@ func newAuthPingCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return map[string]any{"status": "ok", "user": ac.opts.User}, nil
 				}
-				printKVBlock(ac.out, "Authentication", []kvField{
+				cmdutil.PrintKVBlock(ac.out, "Authentication", []cmdutil.KVField{
 					{Label: "Result", Value: "ok"},
 					{Label: "User", Value: ac.opts.User},
 				})
@@ -48,7 +49,7 @@ func newAuthWhoamiCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return data, nil
 				}
-				printKVBlock(ac.out, "Identity", []kvField{
+				cmdutil.PrintKVBlock(ac.out, "Identity", []cmdutil.KVField{
 					{Label: "User", Value: ac.opts.User},
 					{Label: "Authenticated", Value: "true"},
 				})
@@ -84,13 +85,13 @@ func newAuthAPIInfoCmd(ac *appContext) *cobra.Command {
 					keys = append(keys, k)
 				}
 				sort.Strings(keys)
-				printKVBlock(ac.out, "DSM API Info", []kvField{
+				cmdutil.PrintKVBlock(ac.out, "DSM API Info", []cmdutil.KVField{
 					{Label: "Matched", Value: fmt.Sprintf("%d", len(keys))},
 					{Label: "Prefix", Value: valueOrDash(prefix)},
 				})
 				if len(keys) == 0 {
-					ui := newHumanUI(ac.out)
-					_, _ = fmt.Fprintln(ac.out, ui.muted("No APIs matched the current filter."))
+					ui := cmdutil.NewHumanUI(ac.out)
+					_, _ = fmt.Fprintln(ac.out, ui.Muted("No APIs matched the current filter."))
 					return nil, nil
 				}
 				rows := make([][]string, 0, len(keys))
@@ -98,7 +99,7 @@ func newAuthAPIInfoCmd(ac *appContext) *cobra.Command {
 					e := filtered[k]
 					rows = append(rows, []string{k, e.Path, fmt.Sprintf("%d", e.MinVersion), fmt.Sprintf("%d", e.MaxVersion)})
 				}
-				printTable(ac.out, []string{"API", "Path", "Min", "Max"}, rows)
+				cmdutil.PrintTable(ac.out, []string{"API", "Path", "Min", "Max"}, rows)
 				return nil, nil
 			})
 		},

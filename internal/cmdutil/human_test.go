@@ -1,4 +1,4 @@
-package main
+package cmdutil
 
 import (
 	"bytes"
@@ -10,18 +10,18 @@ import (
 
 func TestNewHumanUINonTTY(t *testing.T) {
 	var out bytes.Buffer
-	ui := newHumanUI(&out)
-	if ui.tty {
+	ui := NewHumanUI(&out)
+	if ui.Tty {
 		t.Fatal("expected non-tty writer")
 	}
-	if ui.styled {
+	if ui.Styled {
 		t.Fatal("expected styling disabled for non-tty writer")
 	}
 }
 
 func TestPrintErrorNoANSIOnBuffer(t *testing.T) {
 	var out bytes.Buffer
-	printError(&out, errors.New("boom"))
+	PrintError(&out, errors.New("boom"))
 	got := out.String()
 	if strings.Contains(got, "\x1b[") {
 		t.Fatalf("unexpected ANSI output: %q", got)
@@ -33,7 +33,7 @@ func TestPrintErrorNoANSIOnBuffer(t *testing.T) {
 
 func TestPrintWatchHeaderIncludesFilters(t *testing.T) {
 	var out bytes.Buffer
-	printWatchHeader(&out, time.Unix(0, 0).UTC(), 3, []string{"dbid_1"}, []string{"downloading"})
+	PrintWatchHeader(&out, time.Unix(0, 0).UTC(), 3, []string{"dbid_1"}, []string{"downloading"})
 	got := out.String()
 	for _, want := range []string{"Download Station Watch", "Tasks", "3", "dbid_1", "downloading"} {
 		if !strings.Contains(got, want) {

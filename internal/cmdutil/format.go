@@ -1,8 +1,8 @@
-package main
+package cmdutil
 
 import "fmt"
 
-func formatBytes(b int64) string {
+func FormatBytes(b int64) string {
 	if b == 0 {
 		return "0 B"
 	}
@@ -20,11 +20,11 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%.1f TB", v) // unreachable: loop handles TB
 }
 
-func formatSpeed(bps int64) string {
-	return formatBytes(bps) + "/s"
+func FormatSpeed(bps int64) string {
+	return FormatBytes(bps) + "/s"
 }
 
-func formatPercent(downloaded, total int64) string {
+func FormatPercent(downloaded, total int64) string {
 	if total <= 0 {
 		return "-"
 	}

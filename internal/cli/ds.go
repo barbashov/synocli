@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"synocli/internal/apperr"
+	"synocli/internal/cmdutil"
 	"synocli/internal/output"
 	"synocli/internal/synology/downloadstation"
 )
@@ -71,7 +72,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 				if kind == downloadstation.AddInputTorrent {
 					inputKey = "File"
 				}
-				printKVBlock(ac.out, "Download Added", []kvField{
+				cmdutil.PrintKVBlock(ac.out, "Download Added", []cmdutil.KVField{
 					{Label: "Kind", Value: string(kind)},
 					{Label: inputKey, Value: input},
 					{Label: "Destination", Value: valueOrDash(destination)},
@@ -126,8 +127,8 @@ func newDSListCmd(ac *appContext) *cobra.Command {
 					return downloadstation.FilterTasks(tasks, idSet, statusSet), nil
 				}
 				if watch {
-					ui := newHumanUI(ac.out)
-					return nil, pollLoop(ctx, interval, func() error {
+					ui := cmdutil.NewHumanUI(ac.out)
+					return nil, cmdutil.PollLoop(ctx, interval, func() error {
 						filtered, err := fetch()
 						if err != nil {
 							return err
@@ -138,10 +139,10 @@ func newDSListCmd(ac *appContext) *cobra.Command {
 							env.Data = map[string]any{"event": "snapshot", "tasks": downloadstation.MapTasks(filtered)}
 							return output.WriteJSONLine(ac.out, env)
 						}
-						if ui.tty {
-							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
+						if ui.Tty {
+							_, _ = fmt.Fprint(ac.out, cmdutil.AnsiClearScreen)
 						}
-						printWatchHeader(ac.out, time.Now(), len(filtered), ids, statuses)
+						cmdutil.PrintWatchHeader(ac.out, time.Now(), len(filtered), ids, statuses)
 						printTaskTable(ac.out, filtered)
 						return nil
 					})
@@ -153,7 +154,7 @@ func newDSListCmd(ac *appContext) *cobra.Command {
 				if ac.opts.JSON {
 					return map[string]any{"tasks": downloadstation.MapTasks(filtered)}, nil
 				}
-				printKVBlock(ac.out, "Downloads", []kvField{{Label: "Tasks", Value: fmt.Sprintf("%d", len(filtered))}})
+				cmdutil.PrintKVBlock(ac.out, "Downloads", []cmdutil.KVField{{Label: "Tasks", Value: fmt.Sprintf("%d", len(filtered))}})
 				printTaskTable(ac.out, filtered)
 				return nil, nil
 			})
@@ -224,7 +225,7 @@ func actionWithIDs(ac *appContext, action string, run func(context.Context, *ses
 				if ac.opts.JSON {
 					return data, nil
 				}
-				printKVBlock(ac.out, capitalizeWord(action), []kvField{
+				cmdutil.PrintKVBlock(ac.out, capitalizeWord(action), []cmdutil.KVField{
 					{Label: "Task IDs", Value: strings.Join(ids, ", ")},
 				})
 				return nil, nil
@@ -261,11 +262,11 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 						if ac.opts.JSON {
 							return data, nil
 						}
-						ui := newHumanUI(ac.out)
-						printKVBlock(ac.out, "Wait Result", []kvField{
+						ui := cmdutil.NewHumanUI(ac.out)
+						cmdutil.PrintKVBlock(ac.out, "Wait Result", []cmdutil.KVField{
 							{Label: "Task ID", Value: id},
-							{Label: "Result", Value: ui.status("success", "finished")},
-							{Label: "Status", Value: ui.status(downloadstation.StatusDisplay(task.Status), n)},
+							{Label: "Result", Value: ui.Status("success", "finished")},
+							{Label: "Status", Value: ui.Status(downloadstation.StatusDisplay(task.Status), n)},
 						})
 						return nil, nil
 					}
@@ -289,7 +290,6 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 	return cmd
 }
 
-
 func validatePositiveDuration(flagName string, value time.Duration) error {
 	if value <= 0 {
 		return apperr.New("validation_error", fmt.Sprintf("%s must be greater than 0", flagName), 1)
@@ -298,19 +298,19 @@ func validatePositiveDuration(flagName string, value time.Duration) error {
 }
 
 func printTaskDetail(w io.Writer, t downloadstation.Task) {
-	ui := newHumanUI(w)
-	printKVBlock(w, "Task Detail", []kvField{
+	ui := cmdutil.NewHumanUI(w)
+	cmdutil.PrintKVBlock(w, "Task Detail", []cmdutil.KVField{
 		{Label: "ID", Value: t.ID},
 		{Label: "Title", Value: t.Title},
-		{Label: "Status", Value: ui.status(downloadstation.StatusDisplay(t.Status), downloadstation.NormalizeStatus(t.Status))},
+		{Label: "Status", Value: ui.Status(downloadstation.StatusDisplay(t.Status), downloadstation.NormalizeStatus(t.Status))},
 		{Label: "Type", Value: t.Type},
 		{Label: "Destination", Value: valueOrDash(downloadstation.DestinationOf(t))},
-		{Label: "Size", Value: formatBytes(t.Size)},
-		{Label: "Downloaded", Value: formatBytes(downloadstation.DownloadedOf(t))},
-		{Label: "Progress", Value: formatPercent(downloadstation.DownloadedOf(t), t.Size)},
-		{Label: "Uploaded", Value: formatBytes(downloadstation.UploadedOf(t))},
-		{Label: "Down Speed", Value: formatSpeed(downloadstation.DownSpeedOf(t))},
-		{Label: "Up Speed", Value: formatSpeed(downloadstation.UpSpeedOf(t))},
+		{Label: "Size", Value: cmdutil.FormatBytes(t.Size)},
+		{Label: "Downloaded", Value: cmdutil.FormatBytes(downloadstation.DownloadedOf(t))},
+		{Label: "Progress", Value: cmdutil.FormatPercent(downloadstation.DownloadedOf(t), t.Size)},
+		{Label: "Uploaded", Value: cmdutil.FormatBytes(downloadstation.UploadedOf(t))},
+		{Label: "Down Speed", Value: cmdutil.FormatSpeed(downloadstation.DownSpeedOf(t))},
+		{Label: "Up Speed", Value: cmdutil.FormatSpeed(downloadstation.UpSpeedOf(t))},
 		{Label: "URI", Value: valueOrDash(downloadstation.URIOf(t))},
 		{Label: "Status Extra", Value: valueOrDash(t.StatusExtra)},
 	})
@@ -331,22 +331,22 @@ func joinOrDash(values []string) string {
 }
 
 func printTaskTable(w io.Writer, tasks []downloadstation.Task) {
-	ui := newHumanUI(w)
+	ui := cmdutil.NewHumanUI(w)
 	rows := make([][]string, 0, len(tasks))
 	for _, t := range tasks {
 		rows = append(rows, []string{
 			t.ID,
 			t.Title,
-			ui.status(downloadstation.StatusDisplay(t.Status), downloadstation.NormalizeStatus(t.Status)),
+			ui.Status(downloadstation.StatusDisplay(t.Status), downloadstation.NormalizeStatus(t.Status)),
 			t.Type,
 			valueOrDash(downloadstation.DestinationOf(t)),
-			formatBytes(t.Size),
-			formatBytes(downloadstation.DownloadedOf(t)),
-			formatPercent(downloadstation.DownloadedOf(t), t.Size),
-			formatBytes(downloadstation.UploadedOf(t)),
-			formatSpeed(downloadstation.DownSpeedOf(t)),
-			formatSpeed(downloadstation.UpSpeedOf(t)),
+			cmdutil.FormatBytes(t.Size),
+			cmdutil.FormatBytes(downloadstation.DownloadedOf(t)),
+			cmdutil.FormatPercent(downloadstation.DownloadedOf(t), t.Size),
+			cmdutil.FormatBytes(downloadstation.UploadedOf(t)),
+			cmdutil.FormatSpeed(downloadstation.DownSpeedOf(t)),
+			cmdutil.FormatSpeed(downloadstation.UpSpeedOf(t)),
 		})
 	}
-	printTable(w, []string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "Up Speed"}, rows)
+	cmdutil.PrintTable(w, []string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "Up Speed"}, rows)
 }

@@ -1,19 +1,14 @@
 package main
 
 import (
-	"errors"
 	"os"
 
 	"synocli/internal/apperr"
+	"synocli/internal/cli"
 )
 
 func main() {
-	root := newRootCmd(os.Stdin, os.Stdout, os.Stderr)
-	if err := root.Execute(); err != nil {
-		var handled *jsonOutputHandledError
-		if !errors.As(err, &handled) {
-			printError(os.Stderr, err)
-		}
+	if err := cli.Execute(os.Stdin, os.Stdout, os.Stderr); err != nil {
 		os.Exit(apperr.ExitCode(err))
 	}
 }

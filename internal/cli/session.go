@@ -1,13 +1,11 @@
-package main
+package cli
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"regexp"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -22,67 +20,9 @@ import (
 	"synocli/internal/synology/filestation"
 )
 
-type appContext struct {
-	opts  config.GlobalOptions
-	stdin io.Reader
-	out   io.Writer
-	err   io.Writer
-}
-
-type session struct {
-	endpoint    string
-	start       time.Time
-	authClient  *auth.Client
-	dsClient    *downloadstation.Client
-	fsClient    *filestation.Client
-	apiVersions map[string]int
-}
-
-type jsonOutputHandledError struct {
-	err error
-}
-
-func (e *jsonOutputHandledError) Error() string {
-	return e.err.Error()
-}
-
-func (e *jsonOutputHandledError) Unwrap() error {
-	return e.err
-}
-
 const synologySession = "synocli"
 
 var taskAPIRe = regexp.MustCompile(`^SYNO\.DownloadStation(\d*)\.Task$`)
-
-func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
-	ac := &appContext{stdin: stdin, out: stdout, err: stderr}
-	defaultConfigPath, _ := config.DefaultConfigPath()
-	ac.opts.ConfigPath = defaultConfigPath
-	cmd := &cobra.Command{
-		Use:           "synocli",
-		Short:         "Synology DSM CLI",
-		Version:       versionValue(),
-		SilenceUsage:  true,
-		SilenceErrors: true,
-	}
-	cmd.SetVersionTemplate("{{.Version}}\n")
-	cmd.SetOut(stdout)
-	cmd.SetErr(stderr)
-	f := cmd.PersistentFlags()
-	f.StringVar(&ac.opts.Endpoint, "endpoint", "", "Synology DSM endpoint (https://host:5001)")
-	f.StringVar(&ac.opts.ConfigPath, "config", ac.opts.ConfigPath, "Path to per-user synocli config file")
-	f.StringVar(&ac.opts.User, "user", "", "Synology username")
-	f.StringVar(&ac.opts.Password, "password", "", "Synology password")
-	f.BoolVar(&ac.opts.PasswordStdin, "password-stdin", false, "Read password from stdin")
-	f.StringVar(&ac.opts.CredentialsFile, "credentials-file", "", "Path to credentials file (user=..., password=...)")
-	f.BoolVar(&ac.opts.InsecureTLS, "insecure-tls", false, "Allow insecure TLS (self-signed certs)")
-	f.DurationVar(&ac.opts.Timeout, "timeout", 30*time.Second, "Request timeout")
-	f.BoolVar(&ac.opts.JSON, "json", false, "JSON output")
-	f.BoolVar(&ac.opts.Debug, "debug", false, "Debug request flow")
-
-	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac), newCLIConfigCmd(ac), newVersionCmd(ac))
-	return cmd
-}
 
 func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
 	start := time.Now()
@@ -240,135 +180,6 @@ func isSessionExpiry(err error) bool {
 		return c == 106 || c == 107 || c == 119
 	}
 	return false
-}
-
-func toAppError(err error) error {
-	var dsErr *downloadstation.APIError
-	if errors.As(err, &dsErr) {
-		code := "synology_error"
-		exit := 1
-		if dsErr.Code == 404 {
-			exit = 3
-		}
-		details := map[string]any{
-			"synology_code": dsErr.Code,
-		}
-		if len(dsErr.FailedTasks) > 0 {
-			failed := make([]map[string]any, 0, len(dsErr.FailedTasks))
-			ids := make([]string, 0, len(dsErr.FailedTasks))
-			for _, ft := range dsErr.FailedTasks {
-				failed = append(failed, map[string]any{
-					"id":   ft.ID,
-					"code": ft.Code,
-				})
-				if ft.ID != "" {
-					ids = append(ids, ft.ID)
-				}
-			}
-			details["failed_tasks"] = failed
-			if len(ids) > 0 {
-				details["failed_task_ids"] = ids
-			}
-		}
-		return &apperr.Error{
-			Code:     code,
-			Message:  downloadstation.ErrorMessage(dsErr.Code),
-			ExitCode: exit,
-			Details:  details,
-			Err:      err,
-		}
-	}
-	var fsErr *filestation.APIError
-	if errors.As(err, &fsErr) {
-		code := fsErr.EffectiveCode()
-		details := map[string]any{
-			"synology_code": code,
-		}
-		if fsErr.Path != "" {
-			details["path"] = fsErr.Path
-		}
-		if fsErr.Code != 0 && fsErr.Code != code {
-			details["synology_parent_code"] = fsErr.Code
-		}
-		return &apperr.Error{
-			Code:     "synology_error",
-			Message:  filestation.ErrorMessage(code),
-			ExitCode: 1,
-			Details:  details,
-		}
-	}
-	var app *apperr.Error
-	if errors.As(err, &app) {
-		return err
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return apperr.Wrap("timeout", "command timed out", 5, err)
-	}
-	return apperr.Wrap("internal_error", "command failed", 1, err)
-}
-
-func (a *appContext) outputError(commandName, endpoint string, start time.Time, err error) error {
-	if !a.opts.JSON {
-		return err
-	}
-	env := output.NewEnvelope(false, commandName, endpoint, start)
-	env.Error = &output.ErrInfo{
-		Code:    apperr.Code(err),
-		Message: err.Error(),
-		Details: apperr.Details(err),
-	}
-	_ = output.WriteJSON(a.out, env)
-	return &jsonOutputHandledError{err: err}
-}
-
-func joinCommand(name ...string) string {
-	return strings.Join(name, " ")
-}
-
-func (a *appContext) resolveRuntimeOptions(cmd *cobra.Command) (config.GlobalOptions, error) {
-	out := a.opts
-	configPath := strings.TrimSpace(out.ConfigPath)
-	if configPath == "" {
-		var err error
-		configPath, err = config.DefaultConfigPath()
-		if err != nil {
-			return config.GlobalOptions{}, err
-		}
-	}
-	out.ConfigPath = configPath
-	fileCfg, err := config.LoadConfigFile(configPath, cmd.Flags().Lookup("config").Changed)
-	if err != nil {
-		return config.GlobalOptions{}, err
-	}
-
-	if !cmd.Flags().Lookup("endpoint").Changed && strings.TrimSpace(fileCfg.Endpoint) != "" {
-		out.Endpoint = fileCfg.Endpoint
-	}
-	if !cmd.Flags().Lookup("user").Changed && strings.TrimSpace(fileCfg.User) != "" {
-		out.User = fileCfg.User
-	}
-	if !cmd.Flags().Lookup("password").Changed && strings.TrimSpace(fileCfg.Password) != "" {
-		out.Password = fileCfg.Password
-	}
-	if !cmd.Flags().Lookup("insecure-tls").Changed {
-		out.InsecureTLS = fileCfg.InsecureTLS
-	}
-	if !cmd.Flags().Lookup("timeout").Changed && fileCfg.Timeout > 0 {
-		out.Timeout = fileCfg.Timeout
-	}
-	out.ReuseSession = fileCfg.ReuseSession
-
-	if out.CredentialsFile != "" {
-		if cmd.Flags().Lookup("user").Changed || cmd.Flags().Lookup("password").Changed || out.PasswordStdin {
-			return config.GlobalOptions{}, errors.New("use --credentials-file without --user, --password, or --password-stdin")
-		}
-		out.User = ""
-		out.Password = ""
-	}
-	if out.Password != "" && out.PasswordStdin {
-		return config.GlobalOptions{}, errors.New("use only one of --password or --password-stdin")
-	}
-	return out, nil
 }
 
 func clampVersion(version, maxSupported int) int {

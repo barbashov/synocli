@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"synocli/internal/apperr"
+	"synocli/internal/cmdutil"
 	"synocli/internal/config"
 	"synocli/internal/output"
 )
@@ -68,7 +69,7 @@ func newCLIConfigInitCmd(ac *appContext) *cobra.Command {
 				}
 				return nil
 			}
-			printKVBlock(ac.out, "Config Initialized", []kvField{
+			cmdutil.PrintKVBlock(ac.out, "Config Initialized", []cmdutil.KVField{
 				{Label: "Path", Value: configPath},
 				{Label: "Mode", Value: "0600"},
 			})
@@ -114,7 +115,7 @@ func newCLIConfigShowCmd(ac *appContext) *cobra.Command {
 				}
 				return nil
 			}
-			printKVBlock(ac.out, "Config", []kvField{
+			cmdutil.PrintKVBlock(ac.out, "Config", []cmdutil.KVField{
 				{Label: "Path", Value: configPath},
 				{Label: "Endpoint", Value: valueOrDash(cfg.Endpoint)},
 				{Label: "User", Value: valueOrDash(cfg.User)},

@@ -2,7 +2,7 @@ BINARY := synocli
 BUILD_VERSION ?= dev
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -X 'main.buildVersion=$(BUILD_VERSION)' -X 'main.buildCommit=$(COMMIT)' -X 'main.buildDate=$(BUILD_DATE)'
+LDFLAGS := -X 'synocli/internal/cli.buildVersion=$(BUILD_VERSION)' -X 'synocli/internal/cli.buildCommit=$(COMMIT)' -X 'synocli/internal/cli.buildDate=$(BUILD_DATE)'
 
 .PHONY: build test lint release-check release
 

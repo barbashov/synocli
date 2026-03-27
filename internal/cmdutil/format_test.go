@@ -1,4 +1,4 @@
-package main
+package cmdutil
 
 import "testing"
 
@@ -19,8 +19,8 @@ func TestFormatBytes(t *testing.T) {
 		{1125899906842624, "1024.0 TB"},
 	}
 	for _, tt := range tests {
-		if got := formatBytes(tt.in); got != tt.want {
-			t.Errorf("formatBytes(%d) = %q, want %q", tt.in, got, tt.want)
+		if got := FormatBytes(tt.in); got != tt.want {
+			t.Errorf("FormatBytes(%d) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }
@@ -35,8 +35,8 @@ func TestFormatSpeed(t *testing.T) {
 		{5242880, "5.0 MB/s"},
 	}
 	for _, tt := range tests {
-		if got := formatSpeed(tt.in); got != tt.want {
-			t.Errorf("formatSpeed(%d) = %q, want %q", tt.in, got, tt.want)
+		if got := FormatSpeed(tt.in); got != tt.want {
+			t.Errorf("FormatSpeed(%d) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }
@@ -54,8 +54,8 @@ func TestFormatPercent(t *testing.T) {
 		{0, -1, "-"},
 	}
 	for _, tt := range tests {
-		if got := formatPercent(tt.downloaded, tt.total); got != tt.want {
-			t.Errorf("formatPercent(%d, %d) = %q, want %q", tt.downloaded, tt.total, got, tt.want)
+		if got := FormatPercent(tt.downloaded, tt.total); got != tt.want {
+			t.Errorf("FormatPercent(%d, %d) = %q, want %q", tt.downloaded, tt.total, got, tt.want)
 		}
 	}
 }
