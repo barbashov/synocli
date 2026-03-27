@@ -222,6 +222,7 @@ func newDSCleanupCmd(ac *appContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cleanup",
 		Short: "Delete finished downloads while keeping data intact",
+		Long:  "Delete finished downloads while keeping data intact.\n\nIn JSON mode (--json) the confirmation prompt is skipped automatically.\nUse --yes (-y) to skip confirmation in interactive mode.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ac.withSession(cmd, joinCommand("ds", "cleanup"), func(ctx context.Context, s *session) (any, error) {

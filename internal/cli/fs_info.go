@@ -140,10 +140,14 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 			Args:  cobra.MinimumNArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return ac.withSession(cmd, joinCommand("fs", "search", "clear"), func(ctx context.Context, s *session) (any, error) {
+					var failed []string
 					for _, taskID := range args {
 						if err := s.fsClient.Call(ctx, filestation.APISearch, "clean", makeValues("taskid", taskID), nil); err != nil {
-							return nil, err
+							failed = append(failed, taskID)
 						}
+					}
+					if len(failed) > 0 {
+						return nil, apperr.New("partial_failure", fmt.Sprintf("failed to clear task(s): %s", strings.Join(failed, ", ")), 1)
 					}
 					if ac.opts.JSON {
 						return map[string]any{"cleared": true, "task_ids": args}, nil

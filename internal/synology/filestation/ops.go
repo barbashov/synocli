@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"path"
-	"strings"
 	"path/filepath"
+	"strings"
 
 	"synocli/internal/apperr"
 )

@@ -20,6 +20,32 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.2] - 2026-03-28
+
+### Fixed
+- `fs search clear` now attempts all task IDs instead of stopping on first failure, reports partial failures.
+- `fs extract` and `fs compress` validate `--to` flag before login, avoiding unnecessary session creation on bad input.
+- Upload goroutine in File Station client now explicitly cancels pipe on HTTP failure, preventing potential goroutine leak.
+- Fixed import ordering in `filestation/ops.go` and trailing newline in `ds_test.go` (gofmt).
+
+### Changed
+- `ds cleanup` help text now documents that `--json` mode skips the confirmation prompt.
+- Linter config adds `govet`, `ineffassign`, and `misspell` linters.
+- Makefile lint target updated to `golangci-lint:v2.11.4` to match CI.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "fs search clear now clears all task IDs and reports partial failures instead of aborting on first error."
+  - "fs extract/compress validate --to before session login."
+skill_update_action: "No skill update required."
+```
+
 ## [0.4.1] - 2026-03-27
 
 ### Fixed

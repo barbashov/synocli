@@ -264,6 +264,8 @@ func (c *Client) Upload(ctx context.Context, params map[string]string, localPath
 	req.AddCookie(&http.Cookie{Name: "id", Value: c.sid})
 	resp, err := c.http.Do(req)
 	if err != nil {
+		_ = pr.CloseWithError(err)
+		<-errCh
 		return nil, fmt.Errorf("upload request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()

@@ -16,9 +16,6 @@ func newFSExtractCmd(ac *appContext) *cobra.Command {
 	var createSubfolder bool
 	var password string
 	cmd := newTaskStartCmd(ac, filestation.APIExtract, "extract", "Extract archive", "start", func(args []string) (map[string]string, error) {
-		if dest == "" {
-			return nil, apperr.New("validation_error", "--to is required", 1)
-		}
 		return map[string]string{
 			"file_path":        args[0],
 			"dest_folder_path": dest,
@@ -28,6 +25,13 @@ func newFSExtractCmd(ac *appContext) *cobra.Command {
 			"extract_password": password,
 		}, nil
 	})
+	origRunE := cmd.RunE
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if dest == "" {
+			return apperr.New("validation_error", "--to is required", 1)
+		}
+		return origRunE(cmd, args)
+	}
 	cmd.Flags().StringVar(&dest, "to", "", "Destination folder")
 	cmd.Flags().BoolVar(&overwrite, "overwrite", false, "Overwrite existing files")
 	cmd.Flags().BoolVar(&keepDir, "keep-dir", false, "Keep directory structure")
@@ -47,9 +51,6 @@ func newFSCompressCmd(ac *appContext) *cobra.Command {
 	var mode string
 	var password string
 	cmd := newTaskStartCmd(ac, filestation.APICompress, "compress", "Compress files", "start", func(args []string) (map[string]string, error) {
-		if dest == "" {
-			return nil, apperr.New("validation_error", "--to is required", 1)
-		}
 		j, err := filestation.EncodeJSON(args)
 		if err != nil {
 			return nil, err
@@ -63,6 +64,13 @@ func newFSCompressCmd(ac *appContext) *cobra.Command {
 			"password":       password,
 		}, nil
 	})
+	origRunE := cmd.RunE
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if dest == "" {
+			return apperr.New("validation_error", "--to is required", 1)
+		}
+		return origRunE(cmd, args)
+	}
 	cmd.Flags().StringVar(&dest, "to", "", "Destination archive path")
 	cmd.Flags().StringVar(&format, "format", "zip", "zip|7z")
 	cmd.Flags().IntVar(&level, "level", 5, "Compression level")

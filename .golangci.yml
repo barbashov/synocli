@@ -6,6 +6,9 @@ run:
 linters:
   enable:
     - gocritic
+    - govet
+    - ineffassign
+    - misspell
     - revive
 
   settings:
