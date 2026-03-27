@@ -232,12 +232,12 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 func isSessionExpiry(err error) bool {
 	var dsErr *downloadstation.APIError
 	if errors.As(err, &dsErr) {
-		return dsErr.Code == 106 || dsErr.Code == 107
+		return dsErr.Code == 106 || dsErr.Code == 107 || dsErr.Code == 119
 	}
 	var fsErr *filestation.APIError
 	if errors.As(err, &fsErr) {
 		c := fsErr.EffectiveCode()
-		return c == 106 || c == 107
+		return c == 106 || c == 107 || c == 119
 	}
 	return false
 }

@@ -143,6 +143,7 @@ var errorMessages = map[int]string{
 	105: "insufficient user privilege",
 	106: "session timeout",
 	107: "session interrupted by duplicate login",
+	119: "SID not found",
 	400: "file upload failed",
 	401: "max number of tasks reached",
 	402: "destination denied",
