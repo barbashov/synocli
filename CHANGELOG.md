@@ -20,6 +20,25 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.2.1] - 2026-03-27
+
+### Added
+- CI docker job now pushes to GitHub Container Registry (`ghcr.io`) on `main` branch and version tag pushes; PRs continue to build-only.
+
+### Changed
+- README Docker quick-start now references the pre-built `ghcr.io/ivbarbashov/synocli:latest` image; local `docker build` is kept as a secondary option.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes: []
+skill_update_action: "No skill update required."
+```
+
 ## [0.2.0] - 2026-03-27
 
 ### Added

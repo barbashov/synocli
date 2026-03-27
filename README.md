@@ -13,11 +13,10 @@ make build
 ./bin/synocli --version
 ```
 
-Or build and run via Docker:
+Or run via Docker using the pre-built image:
 
 ```bash
-docker build -t synocli .
-docker run --rm synocli --help
+docker run --rm ghcr.io/ivbarbashov/synocli:latest --help
 ```
 
 Pass credentials and options as you would with the native binary:
@@ -25,7 +24,14 @@ Pass credentials and options as you would with the native binary:
 ```bash
 docker run --rm \
   -v "$HOME/.synocli:/root/.synocli:ro" \
-  synocli --endpoint https://192.168.0.1:5001 ds list
+  ghcr.io/ivbarbashov/synocli:latest --endpoint https://192.168.0.1:5001 ds list
+```
+
+To build the image locally instead:
+
+```bash
+docker build -t synocli .
+docker run --rm synocli --help
 ```
 
 Set reusable shell vars:
