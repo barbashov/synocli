@@ -15,7 +15,20 @@ import (
 )
 
 func newCLIConfigCmd(ac *appContext) *cobra.Command {
-	cmd := &cobra.Command{Use: "cli-config", Short: "Manage synocli local config"}
+	cmd := &cobra.Command{
+		Use:   "cli-config",
+		Short: "Manage synocli local config",
+		Long: `Manage the synocli config file (default: ~/.synocli/config, chmod 600).
+
+Supported directives:
+
+  endpoint      = https://host:5001   DSM base URL (required)
+  user          = admin               Synology username
+  password      = secret              Synology password
+  insecure_tls  = false               Skip TLS certificate verification
+  timeout       = 30s                 Per-request timeout (Go duration)
+  reuse_session = false               Cache session SID between calls`,
+	}
 	cmd.AddCommand(newCLIConfigInitCmd(ac), newCLIConfigShowCmd(ac))
 	return cmd
 }
