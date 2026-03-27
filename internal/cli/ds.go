@@ -310,6 +310,7 @@ func printTaskDetail(w io.Writer, t downloadstation.Task) {
 		{Label: "Progress", Value: cmdutil.FormatPercent(downloadstation.DownloadedOf(t), t.Size)},
 		{Label: "Uploaded", Value: cmdutil.FormatBytes(downloadstation.UploadedOf(t))},
 		{Label: "Down Speed", Value: cmdutil.FormatSpeed(downloadstation.DownSpeedOf(t))},
+		{Label: "ETA", Value: formatTaskETA(t)},
 		{Label: "Up Speed", Value: cmdutil.FormatSpeed(downloadstation.UpSpeedOf(t))},
 		{Label: "URI", Value: valueOrDash(downloadstation.URIOf(t))},
 		{Label: "Status Extra", Value: valueOrDash(t.StatusExtra)},
@@ -345,8 +346,17 @@ func printTaskTable(w io.Writer, tasks []downloadstation.Task) {
 			cmdutil.FormatPercent(downloadstation.DownloadedOf(t), t.Size),
 			cmdutil.FormatBytes(downloadstation.UploadedOf(t)),
 			cmdutil.FormatSpeed(downloadstation.DownSpeedOf(t)),
+			formatTaskETA(t),
 			cmdutil.FormatSpeed(downloadstation.UpSpeedOf(t)),
 		})
 	}
-	cmdutil.PrintTable(w, []string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "Up Speed"}, rows)
+	cmdutil.PrintTable(w, []string{"ID", "Title", "Status", "Type", "Destination", "Size", "Downloaded", "Progress", "Uploaded", "Down Speed", "ETA", "Up Speed"}, rows)
+}
+
+func formatTaskETA(t downloadstation.Task) string {
+	etaSeconds := downloadstation.ETASecondsOf(t)
+	if etaSeconds < 0 {
+		return "-"
+	}
+	return cmdutil.FormatDurationWords(etaSeconds)
 }

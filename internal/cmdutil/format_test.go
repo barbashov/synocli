@@ -59,3 +59,24 @@ func TestFormatPercent(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatDurationWords(t *testing.T) {
+	tests := []struct {
+		in   int64
+		want string
+	}{
+		{0, "0 seconds"},
+		{1, "1 second"},
+		{30, "30 seconds"},
+		{90, "1 minute 30 seconds"},
+		{3600, "1 hour"},
+		{3661, "1 hour 1 minute"},
+		{2*24*60*60 + 3*60*60 + 4*60 + 5, "2 days 3 hours"},
+		{-10, "0 seconds"},
+	}
+	for _, tt := range tests {
+		if got := FormatDurationWords(tt.in); got != tt.want {
+			t.Errorf("FormatDurationWords(%d) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

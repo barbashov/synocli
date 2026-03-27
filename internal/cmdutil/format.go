@@ -1,6 +1,9 @@
 package cmdutil
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func FormatBytes(b int64) string {
 	if b == 0 {
@@ -33,4 +36,42 @@ func FormatPercent(downloaded, total int64) string {
 		pct = 100.0
 	}
 	return fmt.Sprintf("%.1f%%", pct)
+}
+
+func FormatDurationWords(seconds int64) string {
+	if seconds <= 0 {
+		return "0 seconds"
+	}
+	type unit struct {
+		seconds  int64
+		singular string
+		plural   string
+	}
+	units := []unit{
+		{seconds: 24 * 60 * 60, singular: "day", plural: "days"},
+		{seconds: 60 * 60, singular: "hour", plural: "hours"},
+		{seconds: 60, singular: "minute", plural: "minutes"},
+		{seconds: 1, singular: "second", plural: "seconds"},
+	}
+	parts := make([]string, 0, 2)
+	remaining := seconds
+	for _, u := range units {
+		if len(parts) == 2 {
+			break
+		}
+		count := remaining / u.seconds
+		if count == 0 {
+			continue
+		}
+		remaining %= u.seconds
+		label := u.plural
+		if count == 1 {
+			label = u.singular
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", count, label))
+	}
+	if len(parts) == 0 {
+		return "0 seconds"
+	}
+	return strings.Join(parts, " ")
 }

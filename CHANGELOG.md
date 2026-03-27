@@ -20,6 +20,31 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.3.4] - 2026-03-27
+
+### Added
+- Download Station task output now includes computed ETA for downloads:
+  - Human output (`ds list`, `ds get`) shows readable duration (for example, `5 days 2 hours`, `1 minute 30 seconds`).
+  - JSON output includes `eta_seconds` on each task object.
+
+### Changed
+- `eta_seconds` is computed client-side from task size, downloaded bytes, and current download speed because DSM does not provide ETA directly.
+- When ETA cannot be estimated (for example zero speed while download is incomplete), JSON uses `eta_seconds: -1`; completed tasks report `0`.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed:
+  - "ds list: adds ETA column in human table and eta_seconds in JSON task objects"
+  - "ds get: adds ETA field in human detail and eta_seconds in JSON task object"
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "Download ETA is now computed locally (size/downloaded/speed) and exposed as human-readable ETA plus eta_seconds in JSON."
+skill_update_action: "Update synocli output schema references for ds list/get to include eta_seconds semantics (-1 unknown, 0 completed)."
+```
+
 ## [0.3.3] - 2026-03-27
 
 ### Added

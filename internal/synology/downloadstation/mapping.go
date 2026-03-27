@@ -19,6 +19,7 @@ func MapTask(t Task) map[string]any {
 		"uploaded_size":     UploadedOf(t),
 		"download_speed":    DownSpeedOf(t),
 		"upload_speed":      UpSpeedOf(t),
+		"eta_seconds":       ETASecondsOf(t),
 		"created_time":      CreatedOf(t),
 		"completed_time":    CompletedOf(t),
 		"error_detail":      ErrorDetailOf(t),
@@ -111,6 +112,23 @@ func UpSpeedOf(t Task) int64 {
 		return t.Additional.Transfer.SpeedUpload
 	}
 	return 0
+}
+
+// ETASecondsOf returns estimated remaining download time in seconds.
+// Returns -1 when ETA cannot be estimated.
+func ETASecondsOf(t Task) int64 {
+	if t.Size <= 0 {
+		return -1
+	}
+	remaining := t.Size - DownloadedOf(t)
+	if remaining <= 0 {
+		return 0
+	}
+	speed := DownSpeedOf(t)
+	if speed <= 0 {
+		return -1
+	}
+	return (remaining + speed - 1) / speed
 }
 
 // TrackerOf returns the tracker info, or nil.
