@@ -20,6 +20,22 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.2.2] - 2026-03-27
+
+### Fixed
+- CI docker job no longer pushes to GHCR on `main` branch pushes; images are published only on `vX.Y.Z` tag events, preventing duplicate packages when a commit and its release tag are pushed together.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes: []
+skill_update_action: "No skill update required."
+```
+
 ## [0.2.1] - 2026-03-27
 
 ### Added
