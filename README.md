@@ -110,7 +110,7 @@ Use CLI help for full command reference:
 ./bin/synocli --help
 ./bin/synocli ds --help
 ./bin/synocli fs --help
-./bin/synocli fs watch --help
+./bin/synocli fs list --help
 ```
 
 ## Versioning and Releases
