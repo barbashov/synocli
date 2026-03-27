@@ -31,35 +31,66 @@ func newDS2TestClient(t *testing.T, endpoint, sid string, httpClient *http.Clien
 	return mustNewClient(t, endpoint, sid, httpClient, "/webapi/entry.cgi", 2, "SYNO.DownloadStation2.Task")
 }
 
-func TestPauseBuildsExpectedQuery(t *testing.T) {
-	var rawQuery string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rawQuery = r.URL.RawQuery
-		_, _ = w.Write([]byte(`{"success":true}`))
-	}))
-	defer ts.Close()
-	c := newV1TestClient(t, ts.URL, "sid123", ts.Client())
-	if err := c.Pause(context.Background(), []string{"a", "b"}); err != nil {
-		t.Fatalf("Pause error: %v", err)
+func TestV1ActionBuildsExpectedQuery(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		action func(*Client, context.Context, []string) error
+	}{
+		{"Pause", "pause", (*Client).Pause},
+		{"Resume", "resume", (*Client).Resume},
+		{"Delete", "delete", (*Client).Delete},
 	}
-	if !strings.Contains(rawQuery, "method=pause") || !strings.Contains(rawQuery, "id=a%2Cb") || !strings.Contains(rawQuery, "_sid=sid123") {
-		t.Fatalf("unexpected query: %s", rawQuery)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var rawQuery string
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				rawQuery = r.URL.RawQuery
+				_, _ = w.Write([]byte(`{"success":true}`))
+			}))
+			defer ts.Close()
+			c := newV1TestClient(t, ts.URL, "sid123", ts.Client())
+			if err := tc.action(c, context.Background(), []string{"a", "b"}); err != nil {
+				t.Fatalf("%s error: %v", tc.name, err)
+			}
+			if !strings.Contains(rawQuery, "method="+tc.method) || !strings.Contains(rawQuery, "id=a%2Cb") || !strings.Contains(rawQuery, "_sid=sid123") {
+				t.Fatalf("unexpected query: %s", rawQuery)
+			}
+		})
 	}
 }
 
-func TestDeleteBuildsExpectedQuery(t *testing.T) {
-	var rawQuery string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rawQuery = r.URL.RawQuery
-		_, _ = w.Write([]byte(`{"success":true}`))
-	}))
-	defer ts.Close()
-	c := newV1TestClient(t, ts.URL, "sid123", ts.Client())
-	if err := c.Delete(context.Background(), []string{"a", "b"}); err != nil {
-		t.Fatalf("Delete error: %v", err)
+func TestDS2ActionUsesJSONArrayID(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		action func(*Client, context.Context, []string) error
+	}{
+		{"Pause", "pause", (*Client).Pause},
+		{"Resume", "resume", (*Client).Resume},
+		{"Delete", "delete", (*Client).Delete},
 	}
-	if !strings.Contains(rawQuery, "method=delete") || !strings.Contains(rawQuery, "id=a%2Cb") || !strings.Contains(rawQuery, "_sid=sid123") {
-		t.Fatalf("unexpected query: %s", rawQuery)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var method, idParam string
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query()
+				method = q.Get("method")
+				idParam = q.Get("id")
+				_, _ = w.Write([]byte(`{"success":true}`))
+			}))
+			defer ts.Close()
+			c := newDS2TestClient(t, ts.URL, "sidv", ts.Client())
+			if err := tc.action(c, context.Background(), []string{"dbid_1", "dbid_2"}); err != nil {
+				t.Fatalf("%s error: %v", tc.name, err)
+			}
+			if method != tc.method {
+				t.Fatalf("method=%q want %q", method, tc.method)
+			}
+			if idParam != `["dbid_1","dbid_2"]` {
+				t.Fatalf("id=%q want JSON array", idParam)
+			}
+		})
 	}
 }
 

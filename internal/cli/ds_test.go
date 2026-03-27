@@ -180,3 +180,25 @@ func TestPrintCleanupPreviewUsesListStyleTable(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeFailedTaskIDs(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "single", in: "dbid_1", want: "dbid_1"},
+		{name: "comma", in: "dbid_1,dbid_2", want: "dbid_1,dbid_2"},
+		{name: "json_array", in: `["dbid_1","dbid_2"]`, want: "dbid_1,dbid_2"},
+		{name: "empty", in: "  ", want: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := strings.Join(normalizeFailedTaskIDs(tc.in), ",")
+			if got != tc.want {
+				t.Fatalf("normalizeFailedTaskIDs(%q)=%q want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+

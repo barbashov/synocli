@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -229,14 +230,14 @@ func newDSCleanupCmd(ac *appContext) *cobra.Command {
 					return nil, err
 				}
 				statuses := cleanupStatuses(includeSeeding)
-					matchedTasks := cleanupTasks(tasks, statuses)
-					ids := cleanupTaskIDs(matchedTasks)
-					base := map[string]any{
-						"include_seeding": cleanupIncludesSeeding(statuses),
-						"matched_count":   len(ids),
-						"matched_task_ids": ids,
-						"data_kept_intact": true,
-					}
+				matchedTasks := cleanupTasks(tasks, statuses)
+				ids := cleanupTaskIDs(matchedTasks)
+				base := map[string]any{
+					"include_seeding":  cleanupIncludesSeeding(statuses),
+					"matched_count":    len(ids),
+					"matched_task_ids": ids,
+					"data_kept_intact": true,
+				}
 				if len(ids) == 0 {
 					base["deleted_count"] = 0
 					base["failed_count"] = 0
@@ -246,7 +247,7 @@ func newDSCleanupCmd(ac *appContext) *cobra.Command {
 					if ac.opts.JSON {
 						return base, nil
 					}
-					printCleanupSummary(ac.out, statuses, len(ids), 0, 0)
+					_, _ = fmt.Fprintln(ac.out, "Nothing to cleanup")
 					return nil, nil
 				}
 				if !ac.opts.JSON && !yes {
@@ -266,12 +267,11 @@ func newDSCleanupCmd(ac *appContext) *cobra.Command {
 						failedIDs := make([]string, 0, len(apiErr.FailedTasks))
 						for _, ft := range apiErr.FailedTasks {
 							failedTasks = append(failedTasks, map[string]any{"id": ft.ID, "code": ft.Code})
-							if ft.ID == "" {
-								continue
-							}
-							if _, ok := failedSet[ft.ID]; !ok {
-								failedSet[ft.ID] = struct{}{}
-								failedIDs = append(failedIDs, ft.ID)
+							for _, id := range normalizeFailedTaskIDs(ft.ID) {
+								if _, ok := failedSet[id]; !ok {
+									failedSet[id] = struct{}{}
+									failedIDs = append(failedIDs, id)
+								}
 							}
 						}
 						deletedIDs := make([]string, 0, len(ids))
@@ -281,14 +281,14 @@ func newDSCleanupCmd(ac *appContext) *cobra.Command {
 							}
 						}
 						details := map[string]any{
-							"include_seeding": cleanupIncludesSeeding(statuses),
-							"matched_count":   len(ids),
-							"deleted_count":   len(deletedIDs),
-							"failed_count":    len(failedTasks),
+							"include_seeding":  cleanupIncludesSeeding(statuses),
+							"matched_count":    len(ids),
+							"deleted_count":    len(deletedIDs),
+							"failed_count":     len(failedTasks),
 							"matched_task_ids": ids,
 							"deleted_task_ids": deletedIDs,
-							"failed_task_ids": failedIDs,
-							"failed_tasks":    failedTasks,
+							"failed_task_ids":  failedIDs,
+							"failed_tasks":     failedTasks,
 							"data_kept_intact": true,
 						}
 						if !ac.opts.JSON {
@@ -373,6 +373,37 @@ func cleanupTaskIDs(tasks []downloadstation.Task) []string {
 	out := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		out = append(out, task.ID)
+	}
+	return out
+}
+
+func normalizeFailedTaskIDs(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if strings.HasPrefix(raw, "[") {
+		var ids []string
+		if err := json.Unmarshal([]byte(raw), &ids); err == nil {
+			out := make([]string, 0, len(ids))
+			for _, id := range ids {
+				id = strings.TrimSpace(id)
+				if id != "" {
+					out = append(out, id)
+				}
+			}
+			if len(out) > 0 {
+				return out
+			}
+		}
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
 	}
 	return out
 }

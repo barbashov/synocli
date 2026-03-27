@@ -20,6 +20,29 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.1] - 2026-03-27
+
+### Fixed
+- `ds pause`, `ds resume`, `ds delete` now encode task IDs as JSON arrays for DownloadStation2 API (DSM 7+), matching the format used by `ds list` and `ds get`.
+- `ds cleanup` correctly parses failed task IDs returned as JSON arrays or comma-separated strings by DownloadStation2.
+- Fixed indentation in `ds cleanup` command handler.
+
+### Changed
+- `ds cleanup` now prints "Nothing to cleanup" instead of a full summary block when no tasks match.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "ds pause/resume/delete now send JSON array IDs for DownloadStation2 API (DSM 7+); v1 API unchanged."
+  - "ds cleanup empty-result output changed from summary block to single-line message."
+skill_update_action: "No skill update required."
+```
+
 ## [0.4.0] - 2026-03-27
 
 ### Added
