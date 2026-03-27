@@ -45,7 +45,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					return apperr.Wrap("validation_error", "invalid torrent file", 1, err)
 				}
 			}
-			return ac.withDSSession(cmd, joinCommand("ds", "add"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("ds", "add"), func(ctx context.Context, s *session) (any, error) {
 				var taskIDs []string
 				switch kind {
 				case downloadstation.AddInputTorrent:
@@ -109,7 +109,7 @@ func newDSListCmd(ac *appContext) *cobra.Command {
 					return err
 				}
 			}
-			return ac.withDSSession(cmd, joinCommand("ds", "list"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("ds", "list"), func(ctx context.Context, s *session) (any, error) {
 				statusSet := make(map[string]struct{}, len(statuses))
 				for _, st := range statuses {
 					statusSet[strings.ToLower(st)] = struct{}{}
@@ -173,7 +173,7 @@ func newDSGetCmd(ac *appContext) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
-			return ac.withDSSession(cmd, joinCommand("ds", "get"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("ds", "get"), func(ctx context.Context, s *session) (any, error) {
 				t, err := s.dsClient.Get(ctx, id)
 				if err != nil {
 					return nil, err
@@ -214,7 +214,7 @@ func actionWithIDs(ac *appContext, action string, run func(context.Context, *ses
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ids := args
-			return ac.withDSSession(cmd, joinCommand("ds", action), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("ds", action), func(ctx context.Context, s *session) (any, error) {
 				if err := run(ctx, s, ids); err != nil {
 					return nil, err
 				}
@@ -243,7 +243,7 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 				return err
 			}
 			id := args[0]
-			return ac.withDSSession(cmd, joinCommand("ds", "wait"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("ds", "wait"), func(ctx context.Context, s *session) (any, error) {
 				deadline := time.Time{}
 				if maxWait > 0 {
 					deadline = time.Now().Add(maxWait)

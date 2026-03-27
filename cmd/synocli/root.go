@@ -82,31 +82,7 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	return cmd
 }
 
-func (a *appContext) withDSSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
-	return a.doSession(cmd, commandName, moduleOptions{
-		authSession: "DownloadStation",
-		needsDS:     true,
-	}, fn)
-}
-
-func (a *appContext) withAuthSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
-	return a.doSession(cmd, commandName, moduleOptions{authSession: "DownloadStation"}, fn)
-}
-
-func (a *appContext) withFSSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
-	return a.doSession(cmd, commandName, moduleOptions{
-		authSession: "FileStation",
-		needsFS:     true,
-	}, fn)
-}
-
-type moduleOptions struct {
-	authSession string
-	needsDS     bool
-	needsFS     bool
-}
-
-func (a *appContext) doSession(cmd *cobra.Command, commandName string, opts moduleOptions, fn func(context.Context, *session) (any, error)) error {
+func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
 	start := time.Now()
 	runOpts, err := a.resolveRuntimeOptions(cmd)
 	if err != nil {
@@ -137,50 +113,37 @@ func (a *appContext) doSession(cmd *cobra.Command, commandName string, opts modu
 	authPath, authVersion := apiinfo.Select(entries, "SYNO.API.Auth", "/webapi/auth.cgi", 6)
 	authVersion = clampVersion(authVersion, 6)
 
-	apiVersions := map[string]int{"auth": authVersion}
-	var dsClient *downloadstation.Client
-	var fsClient *filestation.Client
-	var dsAPIName, dsPath string
-	var dsVersion int
-	if opts.needsDS {
-		dsAPIName, dsPath, dsVersion = selectDownloadStationAPIs(entries)
-		dsVersion = clampVersion(dsVersion, 3)
-		if runOpts.Debug {
-			_, _ = fmt.Fprintf(a.err, "[debug] selected task api=%s path=%s version=%d\n", dsAPIName, dsPath, dsVersion)
-		}
-		apiVersions["task"] = dsVersion
+	dsAPIName, dsPath, dsVersion := selectDownloadStationAPIs(entries)
+	dsVersion = clampVersion(dsVersion, 3)
+	if runOpts.Debug {
+		_, _ = fmt.Fprintf(a.err, "[debug] selected task api=%s path=%s version=%d\n", dsAPIName, dsPath, dsVersion)
 	}
-	fsAPIs := map[string]filestation.APISpec{}
-	if opts.needsFS {
-		fsAPIs = selectFileStationAPIs(entries)
-		for key, api := range fsAPIs {
-			apiVersions["fs_"+key] = api.Version
-		}
+
+	fsAPIs := selectFileStationAPIs(entries)
+
+	apiVersions := map[string]int{"auth": authVersion, "task": dsVersion}
+	for key, api := range fsAPIs {
+		apiVersions["fs_"+key] = api.Version
 	}
 
 	authClient := &auth.Client{Endpoint: u.String(), Path: authPath, Version: authVersion, HTTP: hc}
-	if strings.TrimSpace(opts.authSession) == "" {
-		opts.authSession = "DownloadStation"
-	}
-	sid, err := authClient.Login(ctx, runOpts.User, runOpts.Password, opts.authSession)
+	sid, err := authClient.Login(ctx, runOpts.User, runOpts.Password, "synocli")
 	if err != nil {
 		return a.outputError(commandName, u.String(), start, apperr.Wrap("auth_failed", "authentication failed", 2, err))
 	}
 	defer func() {
-		_ = authClient.Logout(context.Background(), sid, opts.authSession)
+		_ = authClient.Logout(context.Background(), sid, "synocli")
 	}()
-	if opts.needsDS {
-		dsClient, err = downloadstation.NewClient(u.String(), sid, hc, dsPath, dsVersion, dsAPIName)
-		if err != nil {
-			return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize download station client", 1, err))
-		}
+
+	dsClient, err := downloadstation.NewClient(u.String(), sid, hc, dsPath, dsVersion, dsAPIName)
+	if err != nil {
+		return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize download station client", 1, err))
 	}
-	if opts.needsFS {
-		fsClient, err = filestation.NewClient(u.String(), sid, hc, fsAPIs)
-		if err != nil {
-			return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize file station client", 1, err))
-		}
+	fsClient, err := filestation.NewClient(u.String(), sid, hc, fsAPIs)
+	if err != nil {
+		return a.outputError(commandName, u.String(), start, apperr.Wrap("internal_error", "initialize file station client", 1, err))
 	}
+
 	s := &session{
 		endpoint:    u.String(),
 		start:       start,

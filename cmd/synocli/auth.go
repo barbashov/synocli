@@ -23,7 +23,7 @@ func newAuthPingCmd(ac *appContext) *cobra.Command {
 		Short: "Validate connectivity and auth",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withAuthSession(cmd, joinCommand("auth", "ping"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("auth", "ping"), func(ctx context.Context, s *session) (any, error) {
 				if ac.opts.JSON {
 					return map[string]any{"status": "ok", "user": ac.opts.User}, nil
 				}
@@ -43,7 +43,7 @@ func newAuthWhoamiCmd(ac *appContext) *cobra.Command {
 		Short: "Show authenticated user context",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withAuthSession(cmd, joinCommand("auth", "whoami"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("auth", "whoami"), func(ctx context.Context, s *session) (any, error) {
 				data := map[string]any{"user": ac.opts.User, "authenticated": true}
 				if ac.opts.JSON {
 					return data, nil
@@ -65,7 +65,7 @@ func newAuthAPIInfoCmd(ac *appContext) *cobra.Command {
 		Short: "Show discovered DSM APIs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withAuthSession(cmd, joinCommand("auth", "api-info"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withSession(cmd, joinCommand("auth", "api-info"), func(ctx context.Context, s *session) (any, error) {
 				entries, err := apiinfo.Discover(ctx, s.endpoint, s.authClient.HTTP)
 				if err != nil {
 					return nil, err
