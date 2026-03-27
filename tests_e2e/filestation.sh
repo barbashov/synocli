@@ -262,7 +262,7 @@ reset_remote() {
   if [[ "$RESET_REMOTE" != "1" ]]; then
     return
   fi
-  run "$BIN" fs delete "$BASE" -r --json "${COMMON_ARGS[@]}" || true
+  run "$BIN" fs delete "$BASE" --recursive --json "${COMMON_ARGS[@]}" || true
   run "$BIN" fs mkdir "$BASE_PARENT" "$BASE_NAME" --parents "${COMMON_ARGS[@]}"
 }
 
@@ -271,10 +271,10 @@ cleanup_remote_artifacts() {
   run "$BIN" fs delete "$BASE/a-renamed.txt" "${COMMON_ARGS[@]}" || true
   run "$BIN" fs delete "$BASE/archive.zip" "${COMMON_ARGS[@]}" || true
   run "$BIN" fs delete "$BASE/archive-async.zip" "${COMMON_ARGS[@]}" || true
-  run "$BIN" fs delete "$BASE/copy" -r "${COMMON_ARGS[@]}" || true
-  run "$BIN" fs delete "$BASE/moved" -r "${COMMON_ARGS[@]}" || true
-  run "$BIN" fs delete "$BASE/extracted" -r "${COMMON_ARGS[@]}" || true
-  run "$BIN" fs delete "$BASE/extracted-async" -r "${COMMON_ARGS[@]}" || true
+  run "$BIN" fs delete "$BASE/copy" --recursive "${COMMON_ARGS[@]}" || true
+  run "$BIN" fs delete "$BASE/moved" --recursive "${COMMON_ARGS[@]}" || true
+  run "$BIN" fs delete "$BASE/extracted" --recursive "${COMMON_ARGS[@]}" || true
+  run "$BIN" fs delete "$BASE/extracted-async" --recursive "${COMMON_ARGS[@]}" || true
 }
 
 main() {
@@ -330,8 +330,8 @@ main() {
   run "$BIN" fs tasks "${COMMON_ARGS[@]}"
   run "$BIN" fs tasks-clear "${COMMON_ARGS[@]}"
 
-  run_json_capture "$BIN" fs watch tasks --once --json "${COMMON_ARGS[@]}" | json_assert_watch_snapshot tasks
-  run_json_capture "$BIN" fs watch folder "$BASE" --once --json "${COMMON_ARGS[@]}" | json_assert_watch_snapshot folder
+  run_json_capture "$BIN" fs tasks --json "${COMMON_ARGS[@]}" | json_assert_envelope
+  run_json_capture "$BIN" fs list "$BASE" --json "${COMMON_ARGS[@]}" | json_assert_envelope
 
   run "$BIN" fs delete "$BASE/moved/a-renamed.txt" "${COMMON_ARGS[@]}"
 

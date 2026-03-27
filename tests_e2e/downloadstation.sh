@@ -580,7 +580,7 @@ main() {
   fi
 
   local watch_json_line
-  watch_json_line="$(capture_watch_snapshot_line "$BIN" ds watch --json --interval 1s --id "$paused_task_id" "${COMMON_ARGS[@]}")"
+  watch_json_line="$(capture_watch_snapshot_line "$BIN" ds list --watch --json --interval 1s --id "$paused_task_id" "${COMMON_ARGS[@]}")"
   printf '%s\n' "$watch_json_line" | json_assert_watch_snapshot
 
   delete_task_and_cleanup_strict "$paused_task_id"
