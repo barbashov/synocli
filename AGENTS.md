@@ -56,9 +56,9 @@ Short imperative subject lines: `Fix DS add URL handling`, `Add CI pipeline`, `R
   - `skill_update_action`
 - Keep `## [Unreleased]` updated whenever command behavior/flags/output changes, so AI agents can refresh CLI skills before release.
 - Release flow:
-  1. Update `CHANGELOG.md` (`Unreleased` -> new version section).
+  1. Update `CHANGELOG.md` (`Unreleased` -> new version section) and commit.
   2. Run `make release-check VERSION=vX.Y.Z`.
-  3. Run `make release VERSION=vX.Y.Z`.
+  3. Run `make release VERSION=vX.Y.Z` (requires clean working tree).
   4. Push: `git push origin main vX.Y.Z`.
 
 ## Security
