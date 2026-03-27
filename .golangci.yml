@@ -5,11 +5,13 @@ run:
 
 linters:
   enable:
+    - errcheck
     - gocritic
     - govet
     - ineffassign
     - misspell
     - revive
+    - staticcheck
 
   settings:
     revive:

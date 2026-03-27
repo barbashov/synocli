@@ -113,6 +113,12 @@ func newFSTasksCmd(ac *appContext) *cobra.Command {
 		Short: "List File Station background tasks",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if offset < 0 {
+				return apperr.New("validation_error", "--offset must be >= 0", 1)
+			}
+			if limit < 0 {
+				return apperr.New("validation_error", "--limit must be >= 0", 1)
+			}
 			if watch {
 				if err := validatePositiveDuration("--interval", interval); err != nil {
 					return err

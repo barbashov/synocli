@@ -83,6 +83,9 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 				return "", a.outputError(commandName, u.String(), start, apperr.Wrap("validation_error", "invalid auth options", 1, err))
 			}
 		}
+		if runOpts.User == "" {
+			return "", a.outputError(commandName, u.String(), start, apperr.New("validation_error", "--user is required", 1))
+		}
 		newSID, loginErr := authClient.Login(ctx, runOpts.User, runOpts.Password, synologySession)
 		if loginErr != nil {
 			return "", a.outputError(commandName, u.String(), start, apperr.Wrap("auth_failed", "authentication failed", 2, loginErr))

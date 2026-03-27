@@ -20,6 +20,35 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.3] - 2026-03-28
+
+### Fixed
+- Fix recursive upload double-rename bug: when upload fails but fallback rename succeeds, the second rename no longer re-runs on an already-renamed file; `uploaded_files` counter now reflects actual successes.
+- `fs download` now validates HTTP status code before writing to output file, preventing silent save of HTML error pages from reverse proxies or 5xx responses.
+- `outputError` in JSON mode now falls back to stderr when JSON write fails (broken pipe, full disk) instead of producing zero output.
+- `--user` is now validated before login even when `--password` is pre-set, surfacing a clear `validation_error` instead of a confusing `auth_failed`.
+- `fs list` and `fs tasks` now reject negative `--offset` and `--limit` values with a validation error.
+
+### Changed
+- Enabled `errcheck` and `staticcheck` linters in `.golangci.yml` for stronger static analysis.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed:
+  - "fs download: now returns error on non-200 HTTP status instead of silently writing error body to file"
+  - "fs list: rejects negative --offset and --limit"
+  - "fs tasks: rejects negative --offset and --limit"
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "JSON error output falls back to stderr when stdout write fails"
+  - "Recursive upload counter now accurate; double-rename on error path eliminated"
+  - "Missing --user with --password now returns validation_error instead of auth_failed"
+skill_update_action: "Refresh validation rules for fs download, fs list, fs tasks."
+```
+
 ## [0.4.2] - 2026-03-28
 
 ### Fixed

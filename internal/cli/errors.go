@@ -86,6 +86,8 @@ func (a *appContext) outputError(commandName, endpoint string, start time.Time, 
 		Message: err.Error(),
 		Details: apperr.Details(err),
 	}
-	_ = output.WriteJSON(a.out, env)
+	if writeErr := output.WriteJSON(a.out, env); writeErr != nil {
+		return err
+	}
 	return &jsonOutputHandledError{err: err}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -58,6 +59,12 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 		Short:   "List files in folder",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if offset < 0 {
+				return apperr.New("validation_error", "--offset must be >= 0", 1)
+			}
+			if limit < 0 {
+				return apperr.New("validation_error", "--limit must be >= 0", 1)
+			}
 			if watch {
 				if err := validatePositiveDuration("--interval", interval); err != nil {
 					return err
@@ -470,6 +477,10 @@ func newFSDownloadCmd(ac *appContext) *cobra.Command {
 					return nil, err
 				}
 				defer func() { _ = resp.Body.Close() }()
+				if resp.StatusCode != http.StatusOK {
+					body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+					return nil, fmt.Errorf("download failed: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+				}
 				if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "json") {
 					var out map[string]any
 					if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

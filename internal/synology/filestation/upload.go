@@ -79,12 +79,15 @@ func (c *Client) UploadRecursiveCP(ctx context.Context, localDir, remotePath str
 		// response). If the file landed under its local name we can still
 		// rename it to the intended remote name, so only propagate the
 		// upload error when the rename fallback also fails.
+		needsRename := filepath.Base(p) != path.Base(remoteCurrent)
 		if _, err := c.Upload(ctx, params, p); err != nil {
+			if !needsRename {
+				return err
+			}
 			if renameErr := c.RenameUploaded(ctx, parent, filepath.Base(p), path.Base(remoteCurrent)); renameErr != nil {
 				return err
 			}
-		}
-		if filepath.Base(p) != path.Base(remoteCurrent) {
+		} else if needsRename {
 			if err := c.RenameUploaded(ctx, parent, filepath.Base(p), path.Base(remoteCurrent)); err != nil {
 				return err
 			}
