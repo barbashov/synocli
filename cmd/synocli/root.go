@@ -82,27 +82,15 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	return cmd
 }
 
-// withSession creates an authenticated session with Download Station client and handles output.
-func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
+func (a *appContext) withDSSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
 	return a.doSession(cmd, commandName, moduleOptions{
 		authSession: "DownloadStation",
 		needsDS:     true,
 	}, fn)
 }
 
-// withAuthSession creates an authenticated session without Download Station client setup.
 func (a *appContext) withAuthSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
 	return a.doSession(cmd, commandName, moduleOptions{authSession: "DownloadStation"}, fn)
-}
-
-// withStreamingSession creates a session for streaming commands that handle their own output.
-func (a *appContext) withStreamingSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) error) error {
-	return a.doSession(cmd, commandName, moduleOptions{
-		authSession: "DownloadStation",
-		needsDS:     true,
-	}, func(ctx context.Context, s *session) (any, error) {
-		return nil, fn(ctx, s)
-	})
 }
 
 func (a *appContext) withFSSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) (any, error)) error {
@@ -110,15 +98,6 @@ func (a *appContext) withFSSession(cmd *cobra.Command, commandName string, fn fu
 		authSession: "FileStation",
 		needsFS:     true,
 	}, fn)
-}
-
-func (a *appContext) withStreamingFSSession(cmd *cobra.Command, commandName string, fn func(context.Context, *session) error) error {
-	return a.doSession(cmd, commandName, moduleOptions{
-		authSession: "FileStation",
-		needsFS:     true,
-	}, func(ctx context.Context, s *session) (any, error) {
-		return nil, fn(ctx, s)
-	})
 }
 
 type moduleOptions struct {

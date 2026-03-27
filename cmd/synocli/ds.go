@@ -24,7 +24,6 @@ func newDSCmd(ac *appContext) *cobra.Command {
 		newDSResumeCmd(ac),
 		newDSDeleteCmd(ac),
 		newDSWaitCmd(ac),
-		newDSWatchCmd(ac),
 	)
 	return cmd
 }
@@ -46,7 +45,7 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 					return apperr.Wrap("validation_error", "invalid torrent file", 1, err)
 				}
 			}
-			return ac.withSession(cmd, joinCommand("ds", "add"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withDSSession(cmd, joinCommand("ds", "add"), func(ctx context.Context, s *session) (any, error) {
 				var taskIDs []string
 				switch kind {
 				case downloadstation.AddInputTorrent:
@@ -90,31 +89,81 @@ func newDSAddCmd(ac *appContext) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&destination, "destination", "", "Destination folder")
+	cmd.Flags().StringVar(&destination, "to", "", "Destination folder")
 	return cmd
 }
 
 func newDSListCmd(ac *appContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "list",
-		Short: "List downloads",
-		Args:  cobra.NoArgs,
+	var ids []string
+	var statuses []string
+	var watch bool
+	var interval time.Duration
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List downloads",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ac.withSession(cmd, joinCommand("ds", "list"), func(ctx context.Context, s *session) (any, error) {
-				tasks, err := s.dsClient.List(ctx)
+			if watch {
+				if err := validatePositiveDuration("--interval", interval); err != nil {
+					return err
+				}
+			}
+			return ac.withDSSession(cmd, joinCommand("ds", "list"), func(ctx context.Context, s *session) (any, error) {
+				statusSet := make(map[string]struct{}, len(statuses))
+				for _, st := range statuses {
+					statusSet[strings.ToLower(st)] = struct{}{}
+				}
+				idSet := make(map[string]struct{}, len(ids))
+				for _, id := range ids {
+					idSet[id] = struct{}{}
+				}
+				fetch := func() ([]downloadstation.Task, error) {
+					tasks, err := s.dsClient.List(ctx)
+					if err != nil {
+						return nil, err
+					}
+					return downloadstation.FilterTasks(tasks, idSet, statusSet), nil
+				}
+				if watch {
+					ui := newHumanUI(ac.out)
+					return nil, pollLoop(ctx, interval, func() error {
+						filtered, err := fetch()
+						if err != nil {
+							return err
+						}
+						if ac.opts.JSON {
+							env := output.NewEnvelope(true, joinCommand("ds", "list"), s.endpoint, s.start)
+							env.Meta.APIVersion = s.apiVersions
+							env.Data = map[string]any{"event": "snapshot", "tasks": downloadstation.MapTasks(filtered)}
+							return output.WriteJSONLine(ac.out, env)
+						}
+						if ui.tty {
+							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
+						}
+						printWatchHeader(ac.out, time.Now(), len(filtered), ids, statuses)
+						printTaskTable(ac.out, filtered)
+						return nil
+					})
+				}
+				filtered, err := fetch()
 				if err != nil {
 					return nil, err
 				}
-				mapped := downloadstation.MapTasks(tasks)
 				if ac.opts.JSON {
-					return map[string]any{"tasks": mapped}, nil
+					return map[string]any{"tasks": downloadstation.MapTasks(filtered)}, nil
 				}
-				printKVBlock(ac.out, "Downloads", []kvField{{Label: "Tasks", Value: fmt.Sprintf("%d", len(tasks))}})
-				printTaskTable(ac.out, tasks)
+				printKVBlock(ac.out, "Downloads", []kvField{{Label: "Tasks", Value: fmt.Sprintf("%d", len(filtered))}})
+				printTaskTable(ac.out, filtered)
 				return nil, nil
 			})
 		},
 	}
+	cmd.Flags().StringSliceVar(&ids, "id", nil, "Filter by task ID")
+	cmd.Flags().StringSliceVar(&statuses, "status", nil, "Filter by normalized status")
+	cmd.Flags().BoolVar(&watch, "watch", false, "Continuous polling mode")
+	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
+	return cmd
 }
 
 func newDSGetCmd(ac *appContext) *cobra.Command {
@@ -124,7 +173,7 @@ func newDSGetCmd(ac *appContext) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
-			return ac.withSession(cmd, joinCommand("ds", "get"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withDSSession(cmd, joinCommand("ds", "get"), func(ctx context.Context, s *session) (any, error) {
 				t, err := s.dsClient.Get(ctx, id)
 				if err != nil {
 					return nil, err
@@ -165,7 +214,7 @@ func actionWithIDs(ac *appContext, action string, run func(context.Context, *ses
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ids := args
-			return ac.withSession(cmd, joinCommand("ds", action), func(ctx context.Context, s *session) (any, error) {
+			return ac.withDSSession(cmd, joinCommand("ds", action), func(ctx context.Context, s *session) (any, error) {
 				if err := run(ctx, s, ids); err != nil {
 					return nil, err
 				}
@@ -194,7 +243,7 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 				return err
 			}
 			id := args[0]
-			return ac.withSession(cmd, joinCommand("ds", "wait"), func(ctx context.Context, s *session) (any, error) {
+			return ac.withDSSession(cmd, joinCommand("ds", "wait"), func(ctx context.Context, s *session) (any, error) {
 				deadline := time.Time{}
 				if maxWait > 0 {
 					deadline = time.Now().Add(maxWait)
@@ -238,63 +287,6 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 	return cmd
 }
 
-func newDSWatchCmd(ac *appContext) *cobra.Command {
-	var interval time.Duration
-	var ids []string
-	var statuses []string
-	cmd := &cobra.Command{
-		Use:   "watch",
-		Short: "Watch task state",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validatePositiveDuration("--interval", interval); err != nil {
-				return err
-			}
-			return ac.withStreamingSession(cmd, joinCommand("ds", "watch"), func(ctx context.Context, s *session) error {
-				ui := newHumanUI(ac.out)
-				inPlace := ui.tty
-				statusSet := make(map[string]struct{}, len(statuses))
-				for _, st := range statuses {
-					statusSet[strings.ToLower(st)] = struct{}{}
-				}
-				idSet := make(map[string]struct{}, len(ids))
-				for _, id := range ids {
-					idSet[id] = struct{}{}
-				}
-				for {
-					tasks, err := s.dsClient.List(ctx)
-					if err != nil {
-						return err
-					}
-					filtered := downloadstation.FilterTasks(tasks, idSet, statusSet)
-					if ac.opts.JSON {
-						env := output.NewEnvelope(true, joinCommand("ds", "watch"), s.endpoint, s.start)
-						env.Meta.APIVersion = s.apiVersions
-						env.Data = map[string]any{"event": "snapshot", "tasks": downloadstation.MapTasks(filtered)}
-						if err := output.WriteJSONLine(ac.out, env); err != nil {
-							return err
-						}
-					} else {
-						if inPlace {
-							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
-						}
-						printWatchHeader(ac.out, time.Now(), len(filtered), ids, statuses)
-						printTaskTable(ac.out, filtered)
-					}
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case <-time.After(interval):
-					}
-				}
-			})
-		},
-	}
-	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Watch polling interval")
-	cmd.Flags().StringSliceVar(&ids, "id", nil, "Filter by task ID")
-	cmd.Flags().StringSliceVar(&statuses, "status", nil, "Filter by normalized status")
-	return cmd
-}
 
 func validatePositiveDuration(flagName string, value time.Duration) error {
 	if value <= 0 {

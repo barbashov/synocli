@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/spf13/cobra"
 )
 
 func TestFSCopyRequiresDestinationFlag(t *testing.T) {
@@ -75,28 +73,20 @@ func TestFSCopyMoveAliases(t *testing.T) {
 	}
 }
 
-func TestFSWatchOnceFlags(t *testing.T) {
-	watchCmd := newFSWatchCmd(&appContext{})
-	var tasksCmd, folderCmd *cobra.Command
-	for _, c := range watchCmd.Commands() {
-		switch c.Name() {
-		case "tasks":
-			tasksCmd = c
-		case "folder":
-			folderCmd = c
-		}
+func TestFSWatchFlags(t *testing.T) {
+	tasksCmd := newFSTasksCmd(&appContext{})
+	if tasksCmd.Flags().Lookup("watch") == nil {
+		t.Fatal("fs tasks missing --watch flag")
 	}
-	if tasksCmd == nil {
-		t.Fatal("tasks watch subcommand not found")
+	if tasksCmd.Flags().Lookup("interval") == nil {
+		t.Fatal("fs tasks missing --interval flag")
 	}
-	if folderCmd == nil {
-		t.Fatal("folder watch subcommand not found")
+	listCmd := newFSListCmd(&appContext{})
+	if listCmd.Flags().Lookup("watch") == nil {
+		t.Fatal("fs list missing --watch flag")
 	}
-	if tasksCmd.Flags().Lookup("once") == nil {
-		t.Fatal("tasks watch missing --once flag")
-	}
-	if folderCmd.Flags().Lookup("once") == nil {
-		t.Fatal("folder watch missing --once flag")
+	if listCmd.Flags().Lookup("interval") == nil {
+		t.Fatal("fs list missing --interval flag")
 	}
 }
 

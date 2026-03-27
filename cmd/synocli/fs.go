@@ -49,7 +49,6 @@ func newFSCmd(ac *appContext) *cobra.Command {
 		newFSCompressStopCmd(ac),
 		newFSTasksCmd(ac),
 		newFSTasksClearCmd(ac),
-		newFSWatchCmd(ac),
 	)
 	return cmd
 }
@@ -111,35 +110,84 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 	var sortBy, sortDirection, pattern, filetype string
 	var recursive bool
 	var additional []string
+	var watch bool
+	var interval time.Duration
 	cmd := &cobra.Command{
 		Use:     "list <folder-path>",
 		Aliases: []string{"ls"},
 		Short:   "List files in folder",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if watch {
+				if err := validatePositiveDuration("--interval", interval); err != nil {
+					return err
+				}
+			}
 			return ac.withFSSession(cmd, joinCommand("fs", "list"), func(ctx context.Context, s *session) (any, error) {
-				params := makeValues("folder_path", args[0])
-				params.Set("offset", fmt.Sprintf("%d", offset))
-				params.Set("limit", fmt.Sprintf("%d", limit))
-				if sortBy != "" {
-					params.Set("sort_by", sortBy)
-				}
-				if sortDirection != "" {
-					params.Set("sort_direction", sortDirection)
-				}
-				if pattern != "" {
-					params.Set("pattern", pattern)
-				}
-				if filetype != "" {
-					params.Set("filetype", filetype)
-				}
-				params.Set("recursive", fmt.Sprintf("%t", recursive))
-				if len(additional) > 0 {
-					j, err := filestation.EncodeJSON(additional)
-					if err != nil {
-						return nil, err
+				buildParams := func() (mapValues, error) {
+					params := makeValues("folder_path", args[0])
+					params.Set("offset", fmt.Sprintf("%d", offset))
+					params.Set("limit", fmt.Sprintf("%d", limit))
+					if sortBy != "" {
+						params.Set("sort_by", sortBy)
 					}
-					params.Set("additional", j)
+					if sortDirection != "" {
+						params.Set("sort_direction", sortDirection)
+					}
+					if pattern != "" {
+						params.Set("pattern", pattern)
+					}
+					if filetype != "" {
+						params.Set("filetype", filetype)
+					}
+					params.Set("recursive", fmt.Sprintf("%t", recursive))
+					if len(additional) > 0 {
+						j, err := filestation.EncodeJSON(additional)
+						if err != nil {
+							return nil, err
+						}
+						params.Set("additional", j)
+					}
+					return params, nil
+				}
+				if watch {
+					ui := newHumanUI(ac.out)
+					return nil, pollLoop(ctx, interval, func() error {
+						params, err := buildParams()
+						if err != nil {
+							return err
+						}
+						var out map[string]any
+						if err := s.fsClient.Call(ctx, filestation.APIList, "list", params, &out); err != nil {
+							return err
+						}
+						if ac.opts.JSON {
+							env := output.NewEnvelope(true, joinCommand("fs", "list"), s.endpoint, s.start)
+							env.Meta.APIVersion = s.apiVersions
+							env.Data = map[string]any{"event": "snapshot", "mode": "folder", "path": args[0], "snapshot": out}
+							return output.WriteJSONLine(ac.out, env)
+						}
+						if ui.tty {
+							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
+						}
+						files := filestation.MapSliceAny(out["files"])
+						rows := make([][]string, 0, len(files))
+						for _, f := range files {
+							rows = append(rows, []string{
+								filestation.ValueFromMap(f, "name"),
+								filestation.ValueFromMap(f, "path"),
+								fsListSizeDisplay(f),
+								fsListMTimeDisplay(f),
+							})
+						}
+						printKVBlock(ac.out, "Folder", []kvField{{Label: "Timestamp", Value: time.Now().Format(time.RFC3339)}, {Label: "Path", Value: args[0]}, {Label: "Entries", Value: fmt.Sprintf("%d", len(files))}})
+						printTable(ac.out, []string{"Name", "Path", "Size", "MTime"}, rows)
+						return nil
+					})
+				}
+				params, err := buildParams()
+				if err != nil {
+					return nil, err
 				}
 				var out map[string]any
 				if err := s.fsClient.Call(ctx, filestation.APIList, "list", params, &out); err != nil {
@@ -169,9 +217,11 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 	cmd.Flags().StringVar(&sortBy, "sort-by", "", "Sort by")
 	cmd.Flags().StringVar(&sortDirection, "sort-direction", "", "Sort direction asc/desc")
 	cmd.Flags().StringVar(&pattern, "pattern", "", "Name pattern")
-	cmd.Flags().StringVar(&filetype, "filetype", "", "file/dir/all")
+	cmd.Flags().StringVar(&filetype, "file-type", "", "file/dir/all")
 	cmd.Flags().BoolVar(&recursive, "recursive", false, "Recursive listing")
 	cmd.Flags().StringSliceVar(&additional, "additional", []string{"real_path", "size", "time", "type"}, "Additional fields")
+	cmd.Flags().BoolVar(&watch, "watch", false, "Continuous polling mode")
+	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
 	return cmd
 }
 
@@ -407,7 +457,7 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "Delete directories recursively")
+	cmd.Flags().BoolVar(&recursive, "recursive", false, "Delete directories recursively")
 	cmd.Flags().BoolVar(&async, "async", false, "Run async delete task")
 	return cmd
 }
@@ -558,7 +608,7 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&pattern, "pattern", "", "Pattern")
 	cmd.Flags().BoolVar(&recursive, "recursive", true, "Recursive search")
-	cmd.Flags().StringVar(&filetype, "filetype", "", "file/dir/all")
+	cmd.Flags().StringVar(&filetype, "file-type", "", "file/dir/all")
 	cmd.Flags().BoolVar(&async, "async", false, "Do not wait for completion")
 	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
 	cmd.Flags().DurationVar(&maxWait, "max-wait", 0, "Maximum wait duration (0 means unlimited)")
@@ -727,7 +777,7 @@ func newTaskStopCmd(ac *appContext, apiKey, cmdName, title string) *cobra.Comman
 }
 
 func newFSDirSizeCmd(ac *appContext) *cobra.Command {
-	return newTaskStartCmd(ac, filestation.APIDirSize, "dir-size", "Dir Size", "start", func(args []string) (map[string]string, error) {
+	return newTaskStartCmd(ac, filestation.APIDirSize, "dir-size", "Calculate directory size", "start", func(args []string) (map[string]string, error) {
 		j, err := filestation.EncodeJSON(args)
 		if err != nil {
 			return nil, err
@@ -737,25 +787,25 @@ func newFSDirSizeCmd(ac *appContext) *cobra.Command {
 }
 
 func newFSDirSizeStatusCmd(ac *appContext) *cobra.Command {
-	return newTaskStatusCmd(ac, filestation.APIDirSize, "dir-size-status", "Dir Size Status")
+	return newTaskStatusCmd(ac, filestation.APIDirSize, "dir-size-status", "Check dir size status")
 }
 
 func newFSDirSizeStopCmd(ac *appContext) *cobra.Command {
-	return newTaskStopCmd(ac, filestation.APIDirSize, "dir-size-stop", "Dir Size Stop")
+	return newTaskStopCmd(ac, filestation.APIDirSize, "dir-size-stop", "Stop dir size calculation")
 }
 
 func newFSMD5Cmd(ac *appContext) *cobra.Command {
-	return newTaskStartCmd(ac, filestation.APIMD5, "md5", "MD5", "start", func(args []string) (map[string]string, error) {
+	return newTaskStartCmd(ac, filestation.APIMD5, "md5", "Calculate MD5 checksum", "start", func(args []string) (map[string]string, error) {
 		return map[string]string{"file_path": args[0]}, nil
 	})
 }
 
 func newFSMD5StatusCmd(ac *appContext) *cobra.Command {
-	return newTaskStatusCmd(ac, filestation.APIMD5, "md5-status", "MD5 Status")
+	return newTaskStatusCmd(ac, filestation.APIMD5, "md5-status", "Check MD5 status")
 }
 
 func newFSMD5StopCmd(ac *appContext) *cobra.Command {
-	return newTaskStopCmd(ac, filestation.APIMD5, "md5-stop", "MD5 Stop")
+	return newTaskStopCmd(ac, filestation.APIMD5, "md5-stop", "Stop MD5 calculation")
 }
 
 func newFSExtractCmd(ac *appContext) *cobra.Command {
@@ -764,7 +814,7 @@ func newFSExtractCmd(ac *appContext) *cobra.Command {
 	var keepDir bool
 	var createSubfolder bool
 	var password string
-	cmd := newTaskStartCmd(ac, filestation.APIExtract, "extract", "Extract Archive", "start", func(args []string) (map[string]string, error) {
+	cmd := newTaskStartCmd(ac, filestation.APIExtract, "extract", "Extract archive", "start", func(args []string) (map[string]string, error) {
 		if dest == "" {
 			return nil, apperr.New("validation_error", "--to is required", 1)
 		}
@@ -786,11 +836,11 @@ func newFSExtractCmd(ac *appContext) *cobra.Command {
 }
 
 func newFSExtractStatusCmd(ac *appContext) *cobra.Command {
-	return newTaskStatusCmd(ac, filestation.APIExtract, "extract-status", "Extract Status")
+	return newTaskStatusCmd(ac, filestation.APIExtract, "extract-status", "Check extract status")
 }
 
 func newFSExtractStopCmd(ac *appContext) *cobra.Command {
-	return newTaskStopCmd(ac, filestation.APIExtract, "extract-stop", "Extract Stop")
+	return newTaskStopCmd(ac, filestation.APIExtract, "extract-stop", "Stop extract task")
 }
 
 func newFSCompressCmd(ac *appContext) *cobra.Command {
@@ -799,7 +849,7 @@ func newFSCompressCmd(ac *appContext) *cobra.Command {
 	var level int
 	var mode string
 	var password string
-	cmd := newTaskStartCmd(ac, filestation.APICompress, "compress", "Compress", "start", func(args []string) (map[string]string, error) {
+	cmd := newTaskStartCmd(ac, filestation.APICompress, "compress", "Compress files", "start", func(args []string) (map[string]string, error) {
 		if dest == "" {
 			return nil, apperr.New("validation_error", "--to is required", 1)
 		}
@@ -825,31 +875,66 @@ func newFSCompressCmd(ac *appContext) *cobra.Command {
 }
 
 func newFSCompressStatusCmd(ac *appContext) *cobra.Command {
-	return newTaskStatusCmd(ac, filestation.APICompress, "compress-status", "Compress Status")
+	return newTaskStatusCmd(ac, filestation.APICompress, "compress-status", "Check compress status")
 }
 
 func newFSCompressStopCmd(ac *appContext) *cobra.Command {
-	return newTaskStopCmd(ac, filestation.APICompress, "compress-stop", "Compress Stop")
+	return newTaskStopCmd(ac, filestation.APICompress, "compress-stop", "Stop compress task")
 }
 
 func newFSTasksCmd(ac *appContext) *cobra.Command {
 	var offset, limit int
 	var sortBy, sortDirection string
+	var watch bool
+	var interval time.Duration
 	cmd := &cobra.Command{
 		Use:   "tasks",
 		Short: "List File Station background tasks",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if watch {
+				if err := validatePositiveDuration("--interval", interval); err != nil {
+					return err
+				}
+			}
 			return ac.withFSSession(cmd, joinCommand("fs", "tasks"), func(ctx context.Context, s *session) (any, error) {
-				params := makeValues("offset", fmt.Sprintf("%d", offset), "limit", fmt.Sprintf("%d", limit))
-				if sortBy != "" {
-					params.Set("sort_by", sortBy)
+				fetch := func() (map[string]any, error) {
+					params := makeValues("offset", fmt.Sprintf("%d", offset), "limit", fmt.Sprintf("%d", limit))
+					if sortBy != "" {
+						params.Set("sort_by", sortBy)
+					}
+					if sortDirection != "" {
+						params.Set("sort_direction", sortDirection)
+					}
+					var out map[string]any
+					if err := s.fsClient.Call(ctx, filestation.APIBackgroundTask, "list", params, &out); err != nil {
+						return nil, err
+					}
+					return out, nil
 				}
-				if sortDirection != "" {
-					params.Set("sort_direction", sortDirection)
+				if watch {
+					ui := newHumanUI(ac.out)
+					return nil, pollLoop(ctx, interval, func() error {
+						out, err := fetch()
+						if err != nil {
+							return err
+						}
+						if ac.opts.JSON {
+							env := output.NewEnvelope(true, joinCommand("fs", "tasks"), s.endpoint, s.start)
+							env.Meta.APIVersion = s.apiVersions
+							env.Data = map[string]any{"event": "snapshot", "mode": "tasks", "snapshot": out}
+							return output.WriteJSONLine(ac.out, env)
+						}
+						if ui.tty {
+							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
+						}
+						printKVBlock(ac.out, "Background Tasks", []kvField{{Label: "Timestamp", Value: time.Now().Format(time.RFC3339)}})
+						printBackgroundTasks(ac.out, out)
+						return nil
+					})
 				}
-				var out map[string]any
-				if err := s.fsClient.Call(ctx, filestation.APIBackgroundTask, "list", params, &out); err != nil {
+				out, err := fetch()
+				if err != nil {
 					return nil, err
 				}
 				if ac.opts.JSON {
@@ -864,6 +949,8 @@ func newFSTasksCmd(ac *appContext) *cobra.Command {
 	cmd.Flags().IntVar(&limit, "limit", 100, "Limit")
 	cmd.Flags().StringVar(&sortBy, "sort-by", "", "Sort by")
 	cmd.Flags().StringVar(&sortDirection, "sort-direction", "", "Sort direction")
+	cmd.Flags().BoolVar(&watch, "watch", false, "Continuous polling mode")
+	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
 	return cmd
 }
 
@@ -898,128 +985,6 @@ func newFSTasksClearCmd(ac *appContext) *cobra.Command {
 	return cmd
 }
 
-func newFSWatchCmd(ac *appContext) *cobra.Command {
-	cmd := &cobra.Command{Use: "watch", Short: "Watch File Station tasks or folders"}
-	cmd.AddCommand(newFSWatchTasksCmd(ac), newFSWatchFolderCmd(ac))
-	return cmd
-}
-
-func newFSWatchTasksCmd(ac *appContext) *cobra.Command {
-	var interval time.Duration
-	var limit int
-	var once bool
-	cmd := &cobra.Command{
-		Use:   "tasks",
-		Short: "Watch background tasks",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validatePositiveDuration("--interval", interval); err != nil {
-				return err
-			}
-			return ac.withStreamingFSSession(cmd, joinCommand("fs", "watch", "tasks"), func(ctx context.Context, s *session) error {
-				ui := newHumanUI(ac.out)
-				for {
-					var out map[string]any
-					if err := s.fsClient.Call(ctx, filestation.APIBackgroundTask, "list", makeValues("offset", "0", "limit", fmt.Sprintf("%d", limit)), &out); err != nil {
-						return err
-					}
-					if ac.opts.JSON {
-						env := output.NewEnvelope(true, joinCommand("fs", "watch", "tasks"), s.endpoint, s.start)
-						env.Meta.APIVersion = s.apiVersions
-						env.Data = map[string]any{"event": "snapshot", "mode": "tasks", "snapshot": out}
-						if err := output.WriteJSONLine(ac.out, env); err != nil {
-							return err
-						}
-					} else {
-						if ui.tty {
-							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
-						}
-						printKVBlock(ac.out, "File Station Task Watch", []kvField{{Label: "Timestamp", Value: time.Now().Format(time.RFC3339)}})
-						printBackgroundTasks(ac.out, out)
-					}
-					if once {
-						return nil
-					}
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case <-time.After(interval):
-					}
-				}
-			})
-		},
-	}
-	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
-	cmd.Flags().IntVar(&limit, "limit", 100, "Max tasks per snapshot")
-	cmd.Flags().BoolVar(&once, "once", false, "Emit one snapshot and exit")
-	return cmd
-}
-
-func newFSWatchFolderCmd(ac *appContext) *cobra.Command {
-	var interval time.Duration
-	var recursive bool
-	var additional []string
-	var once bool
-	cmd := &cobra.Command{
-		Use:   "folder <folder-path>",
-		Short: "Watch folder listing",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validatePositiveDuration("--interval", interval); err != nil {
-				return err
-			}
-			return ac.withStreamingFSSession(cmd, joinCommand("fs", "watch", "folder"), func(ctx context.Context, s *session) error {
-				ui := newHumanUI(ac.out)
-				for {
-					params := makeValues("folder_path", args[0], "offset", "0", "limit", "1000", "recursive", fmt.Sprintf("%t", recursive))
-					if len(additional) > 0 {
-						j, err := filestation.EncodeJSON(additional)
-						if err != nil {
-							return err
-						}
-						params.Set("additional", j)
-					}
-					var out map[string]any
-					if err := s.fsClient.Call(ctx, filestation.APIList, "list", params, &out); err != nil {
-						return err
-					}
-					if ac.opts.JSON {
-						env := output.NewEnvelope(true, joinCommand("fs", "watch", "folder"), s.endpoint, s.start)
-						env.Meta.APIVersion = s.apiVersions
-						env.Data = map[string]any{"event": "snapshot", "mode": "folder", "path": args[0], "snapshot": out}
-						if err := output.WriteJSONLine(ac.out, env); err != nil {
-							return err
-						}
-					} else {
-						if ui.tty {
-							_, _ = fmt.Fprint(ac.out, ansiClearScreen)
-						}
-						printKVBlock(ac.out, "File Station Folder Watch", []kvField{{Label: "Timestamp", Value: time.Now().Format(time.RFC3339)}, {Label: "Path", Value: args[0]}})
-						files := filestation.MapSliceAny(out["files"])
-						rows := make([][]string, 0, len(files))
-						for _, f := range files {
-							rows = append(rows, []string{filestation.ValueFromMap(f, "name"), filestation.ValueFromMap(f, "path"), filestation.ValueFromMap(f, "isdir")})
-						}
-						printTable(ac.out, []string{"Name", "Path", "Dir"}, rows)
-					}
-					if once {
-						return nil
-					}
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case <-time.After(interval):
-					}
-				}
-			})
-		},
-	}
-	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
-	cmd.Flags().BoolVar(&recursive, "recursive", false, "Recursive listing")
-	cmd.Flags().StringSliceVar(&additional, "additional", []string{"real_path", "size", "time", "type"}, "Additional fields")
-	cmd.Flags().BoolVar(&once, "once", false, "Emit one snapshot and exit")
-	return cmd
-}
 
 func makeValues(kv ...string) mapValues {
 	vals := mapValues{}

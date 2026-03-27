@@ -35,8 +35,8 @@ func TestWatchRejectsNonPositiveInterval(t *testing.T) {
 	for _, interval := range tests {
 		t.Run(interval, func(t *testing.T) {
 			ac := &appContext{}
-			cmd := newDSWatchCmd(ac)
-			cmd.SetArgs([]string{"--interval", interval})
+			cmd := newDSListCmd(ac)
+			cmd.SetArgs([]string{"--watch", "--interval", interval})
 			err := cmd.Execute()
 			if err == nil {
 				t.Fatal("expected error")
