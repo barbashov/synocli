@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"synocli/internal/apperr"
 	"synocli/internal/cmdutil"
 	"synocli/internal/output"
+	"synocli/internal/update"
 )
 
 func newCLIUpdateCmd(ac *appContext) *cobra.Command {
@@ -70,7 +72,14 @@ func newCLIUpdateCmd(ac *appContext) *cobra.Command {
 			if err != nil {
 				return ac.outputError(updateCommandName, "", start, apperr.Wrap("internal_error", "resolve executable path", 1, err))
 			}
+			var clearProgress func()
+			if cmdutil.NewHumanUI(ac.err).Tty && !ac.opts.JSON {
+				client.OnProgress, clearProgress = makeProgressFunc(ac.err)
+			}
 			apply, err := client.ApplyUpdate(ctx, rel, current, exePath, runtime.GOOS, runtime.GOARCH)
+			if clearProgress != nil {
+				clearProgress()
+			}
 			if err != nil {
 				return ac.outputError(updateCommandName, "", start, apperr.Wrap("update_apply_failed", "apply update", 1, err))
 			}
@@ -106,4 +115,47 @@ func newCLIUpdateCmd(ac *appContext) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+const progressBarWidth = 20
+
+func makeProgressFunc(w io.Writer) (update.ProgressFunc, func()) {
+	start := time.Now()
+	var lastLen int
+	fn := func(p update.DownloadProgress) error {
+		line := renderProgressLine(p, time.Since(start))
+		if lastLen > 0 {
+			fmt.Fprint(w, "\r"+strings.Repeat(" ", lastLen)+"\r")
+		}
+		fmt.Fprint(w, line)
+		lastLen = len(line)
+		return nil
+	}
+	clear := func() {
+		if lastLen > 0 {
+			fmt.Fprint(w, "\r"+strings.Repeat(" ", lastLen)+"\r")
+			lastLen = 0
+		}
+	}
+	return fn, clear
+}
+
+func renderProgressLine(p update.DownloadProgress, elapsed time.Duration) string {
+	dl := cmdutil.FormatBytes(p.Downloaded)
+	if p.Total <= 0 {
+		return "Downloading... " + dl
+	}
+	ratio := float64(p.Downloaded) / float64(p.Total)
+	if ratio > 1 {
+		ratio = 1
+	}
+	filled := int(ratio * progressBarWidth)
+	bar := strings.Repeat("#", filled) + strings.Repeat("-", progressBarWidth-filled)
+	pct := cmdutil.FormatPercent(p.Downloaded, p.Total)
+	total := cmdutil.FormatBytes(p.Total)
+	speed := ""
+	if elapsed.Seconds() > 0.5 {
+		speed = "  " + cmdutil.FormatSpeed(int64(float64(p.Downloaded)/elapsed.Seconds()))
+	}
+	return fmt.Sprintf("[%s] %s / %s (%s)%s", bar, dl, total, pct, speed)
 }

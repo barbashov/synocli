@@ -6,9 +6,6 @@ The format is based on Keep a Changelog and uses Semantic Versioning.
 
 ## [Unreleased]
 
-### Added
-- Placeholder for upcoming unreleased changes.
-
 ### Agent Notes
 ```yaml
 breaking_changes: []
@@ -18,6 +15,24 @@ flags_added: []
 flags_changed: []
 behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
+```
+
+## [0.4.4] - 2026-03-29
+
+### Added
+- `cli-update` now shows a live download progress bar on stderr when connected to a terminal: `[##########----------] 7.3 MB / 14.5 MB (50.3%)  2.1 MB/s`. Progress is suppressed in `--json` mode and when stdout/stderr is piped.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed:
+  - "cli-update: shows download progress bar on TTY (stderr); suppressed in --json mode or when piped"
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "cli-update prints a live ASCII progress bar to stderr during the binary archive download when output is a terminal"
+skill_update_action: "No skill update required."
 ```
 
 ## [0.4.3] - 2026-03-28

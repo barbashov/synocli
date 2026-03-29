@@ -37,12 +37,24 @@ type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
+// DownloadProgress carries streamed download state for a single asset.
+// Total is -1 when Content-Length is not available.
+type DownloadProgress struct {
+	Downloaded int64
+	Total      int64
+}
+
+// ProgressFunc is called periodically during a download.
+// Returning a non-nil error aborts the download.
+type ProgressFunc func(DownloadProgress) error
+
 type Client struct {
-	Owner   string
-	Repo    string
-	BaseURL string
-	HTTP    HTTPDoer
-	Now     func() time.Time
+	Owner      string
+	Repo       string
+	BaseURL    string
+	HTTP       HTTPDoer
+	Now        func() time.Time
+	OnProgress ProgressFunc // nil = no-op
 }
 
 type Release struct {
@@ -365,11 +377,11 @@ func (c *Client) ApplyUpdate(ctx context.Context, release Release, currentVersio
 		return res, errors.New("release asset not found: SHA256SUMS")
 	}
 
-	archiveBytes, err := c.downloadAsset(ctx, archiveURL)
+	archiveBytes, err := c.downloadAsset(ctx, archiveURL, true)
 	if err != nil {
 		return res, fmt.Errorf("download %s: %w", archiveName, err)
 	}
-	sumsBytes, err := c.downloadAsset(ctx, sumsURL)
+	sumsBytes, err := c.downloadAsset(ctx, sumsURL, false)
 	if err != nil {
 		return res, fmt.Errorf("download SHA256SUMS: %w", err)
 	}
@@ -387,7 +399,25 @@ func (c *Client) ApplyUpdate(ctx context.Context, release Release, currentVersio
 	return res, nil
 }
 
-func (c *Client) downloadAsset(ctx context.Context, url string) ([]byte, error) {
+type progressReader struct {
+	r          io.Reader
+	downloaded int64
+	total      int64
+	fn         ProgressFunc
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	n, err := pr.r.Read(p)
+	if n > 0 {
+		pr.downloaded += int64(n)
+		if cbErr := pr.fn(DownloadProgress{Downloaded: pr.downloaded, Total: pr.total}); cbErr != nil {
+			return n, cbErr
+		}
+	}
+	return n, err
+}
+
+func (c *Client) downloadAsset(ctx context.Context, url string, reportProgress bool) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build download request: %w", err)
@@ -405,7 +435,15 @@ func (c *Client) downloadAsset(ctx context.Context, url string) ([]byte, error) 
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		return nil, fmt.Errorf("download failed: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	b, err := io.ReadAll(resp.Body)
+	total := int64(-1)
+	if cl := resp.ContentLength; cl > 0 {
+		total = cl
+	}
+	var src io.Reader = resp.Body
+	if reportProgress && c.OnProgress != nil {
+		src = &progressReader{r: resp.Body, total: total, fn: c.OnProgress}
+	}
+	b, err := io.ReadAll(src)
 	if err != nil {
 		return nil, fmt.Errorf("read download body: %w", err)
 	}
