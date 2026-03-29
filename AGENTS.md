@@ -4,13 +4,16 @@
 CLI client for Synology DSM APIs (Download Station, File Station). Built with Go and Cobra.
 
 ## Project Structure
-- `cmd/synocli/` — CLI entrypoint, Cobra commands (`auth`, `ds`, `fs`, `cli-config`), human-readable output formatting.
+- `cmd/synocli/` — CLI entrypoint (`main.go` only).
+- `internal/cli/` — Cobra commands (`auth`, `ds`, `fs`, `cli-config`, `cli-update`, `version`), session management, human-readable output formatting.
 - `internal/synology/` — DSM API clients by module: `apiinfo` (discovery), `auth` (session login/logout), `downloadstation` (task CRUD, torrent handling), `filestation` (files, search, archive, background tasks).
 - `internal/apperr/` — structured errors with exit codes.
+- `internal/cmdutil/` — human output helpers (tables, key-value blocks, TTY detection, formatting).
 - `internal/config/` — endpoint validation, config file parsing, credential resolution.
 - `internal/httpclient/` — shared HTTP client with TLS, cookie jar, debug transport.
 - `internal/output/` — JSON envelope for machine-readable output.
 - `internal/redact/` — sensitive field redaction for debug logs.
+- `internal/update/` — self-update from GitHub releases (version check, download, checksum verification).
 - `tests_e2e/` — shell-based e2e tests requiring a real Synology NAS.
 
 Keep CLI wiring in `cmd/` and protocol/domain logic in `internal/`.
