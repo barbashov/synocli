@@ -125,15 +125,15 @@ func makeProgressFunc(w io.Writer) (update.ProgressFunc, func()) {
 	fn := func(p update.DownloadProgress) error {
 		line := renderProgressLine(p, time.Since(start))
 		if lastLen > 0 {
-			fmt.Fprint(w, "\r"+strings.Repeat(" ", lastLen)+"\r")
+			_, _ = fmt.Fprint(w, "\r"+strings.Repeat(" ", lastLen)+"\r")
 		}
-		fmt.Fprint(w, line)
+		_, _ = fmt.Fprint(w, line)
 		lastLen = len(line)
 		return nil
 	}
 	clear := func() {
 		if lastLen > 0 {
-			fmt.Fprint(w, "\r"+strings.Repeat(" ", lastLen)+"\r")
+			_, _ = fmt.Fprint(w, "\r"+strings.Repeat(" ", lastLen)+"\r")
 			lastLen = 0
 		}
 	}
