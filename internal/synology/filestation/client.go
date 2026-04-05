@@ -121,6 +121,7 @@ var errorMessages = map[int]string{
 	407:  "operation is not permitted",
 	408:  "file or folder does not exist",
 	409:  "non-supported file system",
+	418:  "invalid path format",
 	599:  "internal service error",
 	1000: "failed to perform operation",
 	1001: "failed to upload file",

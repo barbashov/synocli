@@ -58,7 +58,7 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 				return err
 			}
 			return ac.withSession(cmd, joinCommand("fs", "search"), func(ctx context.Context, s *session) (any, error) {
-				params := makeValues("folder_path", args[0], "pattern", pattern, "recursive", fmt.Sprintf("%t", recursive))
+				params := makeValues("folder_path", cleanFolderPath(args[0]), "pattern", pattern, "recursive", fmt.Sprintf("%t", recursive))
 				if filetype != "" {
 					params.Set("filetype", filetype)
 				}

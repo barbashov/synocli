@@ -72,7 +72,7 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 			}
 			return ac.withSession(cmd, joinCommand("fs", "list"), func(ctx context.Context, s *session) (any, error) {
 				buildParams := func() (mapValues, error) {
-					params := makeValues("folder_path", args[0])
+					params := makeValues("folder_path", cleanFolderPath(args[0]))
 					params.Set("offset", fmt.Sprintf("%d", offset))
 					params.Set("limit", fmt.Sprintf("%d", limit))
 					if sortBy != "" {
@@ -226,7 +226,7 @@ func newFSMkdirCmd(ac *appContext) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				params := makeValues("folder_path", args[0], "name", namesJSON, "force_parent", fmt.Sprintf("%t", parents))
+				params := makeValues("folder_path", cleanFolderPath(args[0]), "name", namesJSON, "force_parent", fmt.Sprintf("%t", parents))
 				var out map[string]any
 				if err := s.fsClient.Call(ctx, filestation.APICreateFolder, "create", params, &out); err != nil {
 					return nil, err

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -68,6 +69,13 @@ func makeValuesFromMap(m map[string]string) mapValues {
 		v.Set(k, val)
 	}
 	return v
+}
+
+// cleanFolderPath normalizes a remote folder path by stripping trailing slashes
+// and collapsing redundant separators. The Synology API rejects paths like
+// "/foo/bar/" (error 418), so we normalize before sending.
+func cleanFolderPath(p string) string {
+	return path.Clean(p)
 }
 
 func capitalizeWord(s string) string {

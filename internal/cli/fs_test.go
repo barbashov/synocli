@@ -109,6 +109,24 @@ func TestFSListSizeAndMTimeDisplay(t *testing.T) {
 	}
 }
 
+func TestCleanFolderPath(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"/transmission/download/", "/transmission/download"},
+		{"/transmission/download", "/transmission/download"},
+		{"/", "/"},
+		{"/foo//bar/", "/foo/bar"},
+		{"/foo/bar", "/foo/bar"},
+	}
+	for _, tc := range cases {
+		if got := cleanFolderPath(tc.in); got != tc.want {
+			t.Errorf("cleanFolderPath(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestFSFileSizeFallbackFromAdditional(t *testing.T) {
 	file := map[string]any{
 		"additional": map[string]any{

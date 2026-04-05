@@ -91,3 +91,19 @@ func TestCallDecodesObjectSubError(t *testing.T) {
 		t.Fatalf("unexpected code: %#v", apiErr)
 	}
 }
+
+func TestErrorMessage(t *testing.T) {
+	cases := []struct {
+		code int
+		want string
+	}{
+		{408, "file or folder does not exist"},
+		{418, "invalid path format"},
+		{999, "unmapped"},
+	}
+	for _, tc := range cases {
+		if got := ErrorMessage(tc.code); got != tc.want {
+			t.Errorf("ErrorMessage(%d) = %q, want %q", tc.code, got, tc.want)
+		}
+	}
+}
