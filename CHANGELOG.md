@@ -17,6 +17,25 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.5] - 2026-04-06
+
+### Fixed
+- `fs list`, `fs mkdir`, and `fs search` now strip trailing slashes from the folder path argument before sending to the API. Synology FileStation returns error 418 for paths like `/foo/bar/`; the path is normalized with `path.Clean` before the request.
+- Map FileStation API error code 418 to `"invalid path format"` instead of `"unmapped"`.
+- Fix unchecked `fmt.Fprint` return values in `cli-update` download progress bar (lint: `errcheck`).
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "fs list/mkdir/search: trailing slashes on folder path arguments are silently stripped before the API call"
+skill_update_action: "No skill update required."
+```
+
 ## [0.4.4] - 2026-03-29
 
 ### Added
