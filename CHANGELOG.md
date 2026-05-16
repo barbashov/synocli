@@ -6,15 +6,23 @@ The format is based on Keep a Changelog and uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+- `ds bandwidth get` — display current BT bandwidth limits (download / upload, KB/s). `0` is rendered as `unlimited`.
+- `ds bandwidth set` — update BT bandwidth limits via `--bt-max-download` and/or `--bt-max-upload` (KB/s; `0` = unlimited). At least one of the two flags is required; only the flags explicitly provided are sent to DSM, so the other cap is preserved. Backed by `SYNO.DownloadStation.Info` `getconfig` / `setserverconfig`.
+
 ### Agent Notes
 ```yaml
 breaking_changes: []
-commands_added: []
+commands_added:
+  - "ds bandwidth get: show current BT bandwidth caps (bt_max_download, bt_max_upload in KB/s; 0 means unlimited)"
+  - "ds bandwidth set: update BT bandwidth caps via --bt-max-download / --bt-max-upload (KB/s; 0 = unlimited; at least one flag required; only provided fields are sent)"
 commands_changed: []
-flags_added: []
+flags_added:
+  - "ds bandwidth set --bt-max-download (int, KB/s, 0 = unlimited)"
+  - "ds bandwidth set --bt-max-upload (int, KB/s, 0 = unlimited)"
 flags_changed: []
 behavior_changes: []
-skill_update_action: "No skill update required until this section is released."
+skill_update_action: "Update CLI skill to document `ds bandwidth get` and `ds bandwidth set` subcommands."
 ```
 
 ## [0.4.5] - 2026-04-06
