@@ -6,6 +6,19 @@ The format is based on Keep a Changelog and uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes: []
+skill_update_action: "No skill update required until this section is released."
+```
+
+## [0.4.6] - 2026-05-16
+
 ### Added
 - `ds bandwidth get` — display current BT bandwidth limits (download / upload, KB/s). `0` is rendered as `unlimited`.
 - `ds bandwidth set` — update BT bandwidth limits via `--bt-max-download` and/or `--bt-max-upload` (KB/s; `0` = unlimited). At least one of the two flags is required; only the flags explicitly provided are sent to DSM, so the other cap is preserved. Backed by `SYNO.DownloadStation.Info` `getconfig` / `setserverconfig`.
