@@ -17,6 +17,25 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.7] - 2026-05-17
+
+### Added
+- `ds max-tasks get` — display the current maximum number of simultaneously active download tasks plus DSM's upper bound (`Limit`). JSON envelope exposes `max_tasks` and `max_tasks_limit`.
+- `ds max-tasks set <n>` — set the maximum number of simultaneously active download tasks. Value must be a positive integer within DSM's `max_tasks_limit`. The upper bound is enforced client-side (DSM silently accepts values above the limit even though the Download Station UI treats them as invalid). Backed by `SYNO.DownloadStation2.Settings.Scheduler` `get` / `set` (DSM2 entry.cgi).
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added:
+  - "ds max-tasks get: show current maximum active download tasks (max_tasks) and DSM upper bound (max_tasks_limit)"
+  - "ds max-tasks set <n>: set the maximum number of simultaneously active download tasks (positive integer; client-side capped at max_tasks_limit because DSM silently accepts higher values)"
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes: []
+skill_update_action: "Update CLI skill to document `ds max-tasks get` and `ds max-tasks set <n>` subcommands."
+```
+
 ## [0.4.6] - 2026-05-16
 
 ### Added

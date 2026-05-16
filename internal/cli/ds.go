@@ -32,6 +32,7 @@ func newDSCmd(ac *appContext) *cobra.Command {
 		newDSCleanupCmd(ac),
 		newDSWaitCmd(ac),
 		newDSBandwidthCmd(ac),
+		newDSMaxTasksCmd(ac),
 	)
 	return cmd
 }
