@@ -66,6 +66,8 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
+            type=ref,event=branch
+            type=ref,event=pr
 
       - name: Compute build args
         id: buildargs
