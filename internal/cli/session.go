@@ -18,6 +18,8 @@ import (
 	"synocli/internal/synology/auth"
 	"synocli/internal/synology/downloadstation"
 	"synocli/internal/synology/filestation"
+	"synocli/internal/synology/storage"
+	"synocli/internal/synology/system"
 )
 
 const synologySession = "synocli"
@@ -58,11 +60,17 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 	}
 
 	fsAPIs := selectFileStationAPIs(entries)
+	sysAPIs := selectSystemAPIs(entries)
+	storagePath, storageVer := selectStorageAPI(entries)
 
 	apiVersions := map[string]int{"auth": authVersion, "task": dsVersion}
 	for key, api := range fsAPIs {
 		apiVersions["fs_"+key] = api.Version
 	}
+	for key, api := range sysAPIs {
+		apiVersions["sys_"+key] = api.Version
+	}
+	apiVersions["storage"] = storageVer
 
 	authClient := &auth.Client{Endpoint: u.String(), Path: authPath, Version: authVersion, HTTP: hc}
 
@@ -135,13 +143,23 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 		if err != nil {
 			return nil, apperr.Wrap("internal_error", "initialize file station client", 1, err)
 		}
+		sysClient, err := system.NewClient(u.String(), id, hc, sysAPIs)
+		if err != nil {
+			return nil, apperr.Wrap("internal_error", "initialize system client", 1, err)
+		}
+		storageClient, err := storage.NewClient(u.String(), id, hc, storagePath, storageVer)
+		if err != nil {
+			return nil, apperr.Wrap("internal_error", "initialize storage client", 1, err)
+		}
 		return fn(ctx, &session{
-			endpoint:    u.String(),
-			start:       start,
-			authClient:  authClient,
-			dsClient:    dsClient,
-			fsClient:    fsClient,
-			apiVersions: apiVersions,
+			endpoint:      u.String(),
+			start:         start,
+			authClient:    authClient,
+			dsClient:      dsClient,
+			fsClient:      fsClient,
+			sysClient:     sysClient,
+			storageClient: storageClient,
+			apiVersions:   apiVersions,
 		})
 	}
 
@@ -181,6 +199,14 @@ func isSessionExpiry(err error) bool {
 	if errors.As(err, &fsErr) {
 		c := fsErr.EffectiveCode()
 		return c == 106 || c == 107 || c == 119
+	}
+	var sysErr *system.APIError
+	if errors.As(err, &sysErr) {
+		return sysErr.Code == 106 || sysErr.Code == 107 || sysErr.Code == 119
+	}
+	var stErr *storage.APIError
+	if errors.As(err, &stErr) {
+		return stErr.Code == 106 || stErr.Code == 107 || stErr.Code == 119
 	}
 	return false
 }
@@ -257,4 +283,32 @@ func selectFileStationAPIs(entries map[string]apiinfo.Entry) map[string]filestat
 		out[item.key] = filestation.APISpec{Name: item.apiName, Path: path, Version: version}
 	}
 	return out
+}
+
+func selectSystemAPIs(entries map[string]apiinfo.Entry) map[string]system.APISpec {
+	type sysAPI struct {
+		key          string
+		apiName      string
+		fallbackVer  int
+		maxSupported int
+	}
+	catalog := []sysAPI{
+		{key: system.APIDSMInfo, apiName: "SYNO.DSM.Info", fallbackVer: 2, maxSupported: 2},
+		{key: system.APISystemInfo, apiName: "SYNO.Core.System", fallbackVer: 3, maxSupported: 3},
+		{key: system.APIUtilization, apiName: "SYNO.Core.System.Utilization", fallbackVer: 1, maxSupported: 1},
+		{key: system.APINeedReboot, apiName: "SYNO.Core.Hardware.NeedReboot", fallbackVer: 1, maxSupported: 1},
+		{key: system.APISystemStatus, apiName: "SYNO.Core.System.Status", fallbackVer: 1, maxSupported: 1},
+	}
+	out := make(map[string]system.APISpec, len(catalog))
+	for _, item := range catalog {
+		path, version := apiinfo.Select(entries, item.apiName, "/webapi/entry.cgi", item.fallbackVer)
+		version = clampVersion(version, item.maxSupported)
+		out[item.key] = system.APISpec{Name: item.apiName, Path: path, Version: version}
+	}
+	return out
+}
+
+func selectStorageAPI(entries map[string]apiinfo.Entry) (string, int) {
+	path, version := apiinfo.Select(entries, "SYNO.Storage.CGI.Storage", "/webapi/entry.cgi", 1)
+	return path, clampVersion(version, 1)
 }

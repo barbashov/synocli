@@ -55,6 +55,6 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&ac.opts.NoUpdateCheck, "no-update-check", false, "Skip background update check for this invocation")
 	f.BoolVar(&ac.opts.Debug, "debug", false, "Debug request flow")
 
-	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac), newCLIConfigCmd(ac), newCLIUpdateCmd(ac), newVersionCmd(ac))
+	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac), newInfoCmd(ac), newCLIConfigCmd(ac), newCLIUpdateCmd(ac), newVersionCmd(ac))
 	return cmd
 }

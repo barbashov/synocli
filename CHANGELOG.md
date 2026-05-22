@@ -17,6 +17,25 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.8] - 2026-05-22
+
+### Added
+- `synocli info` — show NAS model, serial, DSM version, uptime, CPU/RAM/temperature, per-volume storage usage (path, RAID type, filesystem, used/total/%), and reboot-required flag. Backed by `SYNO.DSM.Info` (v2 `getinfo`), `SYNO.Core.System` (v3 `info`), `SYNO.Core.Hardware.NeedReboot` (v1 `get`), and `SYNO.Storage.CGI.Storage` (v1 `load_info`). Storage and reboot calls are best-effort: their failures degrade the output rather than failing the command, and JSON output surfaces them as `storage_error` / `reboot_error`. `--json` returns the combined raw payload under `dsm`, `system`, `reboot`, and `storage` keys.
+- `synocli info utilization` — show live CPU/RAM/disk/network load plus diagnostic sensors: per-core/system/user/other CPU load percentages, 1m/5m/15m load averages, real and swap memory usage, system temperature (+ warning flag), per-disk model/temperature/SMART/utilization/read+write throughput, per-interface RX/TX throughput, and DSM `is_system_crashed` / `upgrade_ready` flags. Backed by `SYNO.Core.System.Utilization` (v1 `get`), `SYNO.DSM.Info` (for the system temperature), `SYNO.Core.System.Status` (v1 `get`), and `SYNO.Storage.CGI.Storage` (v1 `load_info`).
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added:
+  - "info: show DSM model, serial, version, uptime, CPU/RAM/temperature, per-volume storage usage and reboot-required flag; JSON keys: dsm, system, reboot, storage (plus *_error for best-effort failures)"
+  - "info utilization: show live CPU/RAM/disk/network load plus system temperature, per-disk temp + SMART status, and is_system_crashed / upgrade_ready flags; JSON keys: utilization, dsm, status, storage (plus *_error)"
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes: []
+skill_update_action: "Document `synocli info` and `synocli info utilization`, including their --json payload schemas and the best-effort *_error fields."
+```
+
 ## [0.4.7] - 2026-05-17
 
 ### Added

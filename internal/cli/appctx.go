@@ -9,6 +9,8 @@ import (
 	"synocli/internal/synology/auth"
 	"synocli/internal/synology/downloadstation"
 	"synocli/internal/synology/filestation"
+	"synocli/internal/synology/storage"
+	"synocli/internal/synology/system"
 )
 
 type appContext struct {
@@ -19,12 +21,14 @@ type appContext struct {
 }
 
 type session struct {
-	endpoint    string
-	start       time.Time
-	authClient  *auth.Client
-	dsClient    *downloadstation.Client
-	fsClient    *filestation.Client
-	apiVersions map[string]int
+	endpoint      string
+	start         time.Time
+	authClient    *auth.Client
+	dsClient      *downloadstation.Client
+	fsClient      *filestation.Client
+	sysClient     *system.Client
+	storageClient *storage.Client
+	apiVersions   map[string]int
 }
 
 type jsonOutputHandledError struct {
