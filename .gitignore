@@ -11,3 +11,6 @@ bin/
 *~
 tmp/
 .DS_Store
+tests_e2e/.cache/
+tests_e2e/.pytest_cache/
+tests_e2e/**/__pycache__/

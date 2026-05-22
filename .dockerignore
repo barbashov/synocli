@@ -1,0 +1,15 @@
+# Keep the docker build context tight: don't ship build artifacts, IDE state,
+# the local tmp/ scratch dir, or the host's pytest cache into the image.
+.git
+.github
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+bin/
+dist/
+tmp/
+tests_e2e/.cache/
+tests_e2e/.pytest_cache/
+**/__pycache__/

@@ -14,7 +14,7 @@ CLI client for Synology DSM APIs (Download Station, File Station). Built with Go
 - `internal/output/` — JSON envelope for machine-readable output.
 - `internal/redact/` — sensitive field redaction for debug logs.
 - `internal/update/` — self-update from GitHub releases (version check, download, checksum verification).
-- `tests_e2e/` — shell-based e2e tests requiring a real Synology NAS.
+- `tests_e2e/` — pytest-based e2e tests requiring a real Synology NAS.
 
 Keep CLI wiring in `cmd/` and protocol/domain logic in `internal/`.
 
@@ -30,10 +30,18 @@ Run `make test` and `make lint` before committing.
 
 ## E2E Tests
 Require a live Synology NAS. Not part of CI. Always ask the user for endpoint, credentials file, and options before running.
+
+Default (Docker, no host Python/Go required):
 ```
-tests_e2e/filestation.sh --endpoint <url> --credentials-file <path> [--base <path>] [--insecure-tls]
-tests_e2e/downloadstation.sh --endpoint <url> --credentials-file <path> [--insecure-tls]
+make test-e2e ENDPOINT=<url> CREDS=<path> [INSECURE_TLS=1] [BASE=<path>] \
+  [DS_DESTINATION=<path>] [PYTEST_ARGS="..."]
 ```
+
+Without Docker (direct pytest):
+```
+pytest tests_e2e/ --endpoint <url> --credentials-file <path> [--insecure-tls]
+```
+See `tests_e2e/README.md` for the full option list and per-file coverage map.
 
 ## Coding Conventions
 - Go 1.26, `gofmt`-clean.

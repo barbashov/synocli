@@ -7,7 +7,7 @@ BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X 'synocli/internal/cli.buildVersion=$(BUILD_VERSION)' -X 'synocli/internal/cli.buildCommit=$(COMMIT)' -X 'synocli/internal/cli.buildDate=$(BUILD_DATE)'
 SHA256_TOOL ?= $(shell command -v sha256sum 2>/dev/null || command -v shasum 2>/dev/null)
 
-.PHONY: build build-platform build-release checksums clean-dist test lint release-check release
+.PHONY: build build-platform build-release checksums clean-dist test lint release-check release test-e2e test-e2e-build
 
 build:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/synocli
@@ -79,3 +79,48 @@ release:
 		exit 1; \
 	fi
 	./scripts/release.sh $(VERSION)
+
+# ---- e2e tests (Docker) ---------------------------------------------------
+# Run the pytest-based e2e suite inside a self-contained Docker image so the
+# host doesn't need Go or Python. The build is multi-stage so the first run
+# compiles synocli; subsequent runs reuse the cached layers.
+#
+# Usage:
+#   make test-e2e ENDPOINT=https://nas:5001 CREDS=./creds [INSECURE_TLS=1]
+#       [BASE=/volume1/synocli-e2e] [PYTEST_ARGS="-k bandwidth -x"]
+#
+# The credentials file is bind-mounted read-only; the entrypoint copies it
+# into the container and enforces mode 0600.
+
+E2E_IMAGE ?= synocli-e2e:latest
+E2E_TORRENT_CACHE ?= $(CURDIR)/tests_e2e/.cache
+
+test-e2e-build:
+	docker build -f tests_e2e/Dockerfile -t $(E2E_IMAGE) .
+
+test-e2e: test-e2e-build
+	@if [ -z "$(ENDPOINT)" ]; then \
+		echo "ENDPOINT is required (example: make test-e2e ENDPOINT=https://nas:5001 CREDS=./creds)"; \
+		exit 1; \
+	fi
+	@if [ -z "$(CREDS)" ]; then \
+		echo "CREDS is required (path to credentials file with user=..., password=...)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(CREDS)" ]; then \
+		echo "CREDS file not found: $(CREDS)"; \
+		exit 1; \
+	fi
+	@mkdir -p "$(E2E_TORRENT_CACHE)"
+	docker run --rm -t \
+		--user $$(id -u):$$(id -g) \
+		-v "$(abspath $(CREDS)):/creds:ro" \
+		-v "$(E2E_TORRENT_CACHE):/work/tests_e2e/.cache" \
+		$(E2E_IMAGE) \
+		--endpoint "$(ENDPOINT)" \
+		$(if $(INSECURE_TLS),--insecure-tls,) \
+		$(if $(BASE),--base $(BASE),) \
+		$(if $(DS_DESTINATION),--ds-destination $(DS_DESTINATION),) \
+		$(if $(REFRESH_TORRENT_CACHE),--refresh-torrent-cache,) \
+		-v \
+		$(PYTEST_ARGS)
