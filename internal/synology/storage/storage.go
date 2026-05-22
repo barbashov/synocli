@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 )
 
@@ -72,14 +73,75 @@ type Pool struct {
 }
 
 type Disk struct {
-	ID          string  `json:"id"`           // e.g. "sda"
-	Name        string  `json:"name"`         // e.g. "Drive 1"
-	Model       string  `json:"model"`
-	Status      string  `json:"status"`
-	SmartStatus string  `json:"smart_status"`
-	SizeTotal   intStr  `json:"size_total"`   // bytes; DSM returns string
-	Temp        int     `json:"temp"`         // degrees Celsius
-	Vendor      string  `json:"vendor"`
+	ID                 string        `json:"id"`     // e.g. "sda"
+	Name               string        `json:"name"`   // e.g. "Drive 1"
+	Device             string        `json:"device"` // e.g. "/dev/sda"
+	Model              string        `json:"model"`
+	Status             string        `json:"status"`
+	SmartStatus        string        `json:"smart_status"`
+	SizeTotal          intStr        `json:"size_total"` // bytes; DSM returns string
+	Temp               int           `json:"temp"`       // degrees Celsius
+	Vendor             string        `json:"vendor"`
+	DiskType           string        `json:"diskType"` // "SATA" | "USB" | ...
+	IsSSD              bool          `json:"isSsd"`
+	SlotID             int           `json:"slot_id"` // bay number
+	Serial             string        `json:"serial"`
+	Firm               string        `json:"firm"`    // firmware revision
+	UsedBy             string        `json:"used_by"` // pool id, or ""
+	ExceedBadSectorThr bool          `json:"exceed_bad_sector_thr"`
+	BelowRemainLifeThr bool          `json:"below_remain_life_thr"`
+	RemainLife         int           `json:"remain_life"` // SSD life %, -1 for HDD
+	Container          DiskContainer `json:"container"`
+}
+
+// DiskContainer describes which enclosure houses the drive: the main NAS unit
+// or one of its expansion shelves.
+type DiskContainer struct {
+	Order int    `json:"order"`
+	Str   string `json:"str"`  // e.g. "DS1511+"
+	Type  string `json:"type"` // "internal" | "ebox"
+}
+
+// HealthInfo is the parsed response of SYNO.Storage.CGI.Smart get_health_info
+// for a single disk. The smartInfo array carries the canonical SMART
+// attribute table; overview is DSM's curated health verdict.
+type HealthInfo struct {
+	Count     int              `json:"count"`
+	Overview  HealthOverview   `json:"overview"`
+	SmartInfo []SmartAttribute `json:"smartInfo"`
+}
+
+type HealthOverview struct {
+	Smart              string               `json:"smart"`      // "normal" | ...
+	SmartTest          string               `json:"smart_test"` // "normal" | ...
+	OverviewStatus     string               `json:"overview_status"`
+	Poweron            intStr               `json:"poweron"` // hours; DSM returns string
+	IDNF               int                  `json:"idnf"`
+	Retry              int                  `json:"retry"`
+	UNC                int                  `json:"unc"`
+	RemainLife         int                  `json:"remain_life"`
+	ExceedBadSectorThr bool                 `json:"exceed_bad_sector_thr"`
+	BelowRemainLifeThr bool                 `json:"below_remain_life_thr"`
+	IsSSD              bool                 `json:"isSsd"`
+	IsNVMe             bool                 `json:"isNVMeDisk"`
+	ReadOnly           bool                 `json:"read_only"`
+	SmartScheduleList  []SmartScheduleEntry `json:"smart_schedule_list"`
+}
+
+type SmartScheduleEntry struct {
+	NextTriggerTime string `json:"next_trigger_time"`
+}
+
+// SmartAttribute is one row of the standard SMART attribute table. DSM
+// emits every field as a string.
+type SmartAttribute struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Current   string `json:"current"`
+	Worst     string `json:"worst"`
+	Threshold string `json:"threshold"`
+	Raw       string `json:"raw"`
+	Status    string `json:"status"` // "OK" | "Bad"
 }
 
 // Size is the {total, used} pair DSM emits for volumes and pools.
@@ -130,4 +192,29 @@ func (c *Client) LoadInfo(ctx context.Context) (*LoadInfo, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// GetHealthInfo fetches the per-disk SMART health summary and attribute table
+// from SYNO.Storage.CGI.Smart. `device` is the device path DSM expects
+// (e.g. "/dev/sda") and `diskID` is the short disk id (e.g. "sda"); DSM
+// requires both query parameters to be set.
+func (c *Client) GetHealthInfo(ctx context.Context, device, diskID string) (*HealthInfo, error) {
+	if device == "" {
+		return nil, fmt.Errorf("device is required")
+	}
+	if diskID == "" {
+		return nil, fmt.Errorf("diskID is required")
+	}
+	extra := url.Values{
+		"device": []string{device},
+		"disk":   []string{diskID},
+	}
+	var raw struct {
+		HealthInfo HealthInfo `json:"healthInfo"`
+	}
+	if err := c.callAPIJSON(ctx, smartAPIName, "get_health_info", extra, &raw); err != nil {
+		return nil, err
+	}
+	hi := raw.HealthInfo
+	return &hi, nil
 }

@@ -13,6 +13,7 @@ import (
 
 const (
 	apiName        = "SYNO.Storage.CGI.Storage"
+	smartAPIName   = "SYNO.Storage.CGI.Smart"
 	defaultPath    = "/webapi/entry.cgi"
 	defaultVersion = 1
 )
@@ -47,11 +48,24 @@ func NewClient(endpoint, sid string, httpClient *http.Client, path string, versi
 }
 
 func (c *Client) callJSON(ctx context.Context, method string, out any) error {
+	return c.callAPIJSON(ctx, apiName, method, nil, out)
+}
+
+// callAPIJSON issues a GET to entry.cgi for the given DSM API name and method,
+// merging any caller-supplied extra query parameters and decoding the standard
+// envelope into out. Smart and Storage APIs share the same auth/cookie surface
+// so they live behind one helper.
+func (c *Client) callAPIJSON(ctx context.Context, api, method string, extra url.Values, out any) error {
 	vals := url.Values{}
-	vals.Set("api", apiName)
+	vals.Set("api", api)
 	vals.Set("version", strconv.Itoa(c.version))
 	vals.Set("method", method)
 	vals.Set("_sid", c.sid)
+	for k, vs := range extra {
+		for _, v := range vs {
+			vals.Add(k, v)
+		}
+	}
 	u := c.endpoint + c.path + "?" + vals.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

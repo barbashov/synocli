@@ -17,6 +17,26 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.9] - 2026-05-22
+
+### Added
+- `synocli info disks` — show per-bay drive state in a single table: BAY, NAME, MODEL, SIZE, TYPE (HDD / SSD with remaining-life % when known), TEMP, AGE (power-on hours rendered as `5y 6mo`), HEALTH verdict, and USED BY (pool id). The HEALTH cell combines DSM's curated flags (`smart`, `exceed_bad_sector_thr`, `below_remain_life_thr`, `read_only`) with raw SMART id 5 (Reallocated_Sector_Ct) and id 197 (Current_Pending_Sector) so sub-threshold issues surface early; affected rows get a `warn` badge and a one-line footer summarises healthy / warning counts. Backed by `SYNO.Storage.CGI.Storage` `load_info` plus one `SYNO.Storage.CGI.Smart` `get_health_info` call per disk (best-effort: a per-disk SMART failure renders that row's AGE/HEALTH as `error WARN` rather than aborting the command). `--json` returns `{ "storage": <load_info>, "health": { "<disk_id>": { "overview": …, "reallocated": N, "pending": N, "error": "…" } } }`.
+- `synocli info disks smart` — show detailed SMART data for each drive (or one drive when `--disk <id>` is passed): a per-disk KV header (model, serial, firmware, type, size, used-by, SMART status + test, power-on hours, IDNF/Retry/UNC counters, remaining-life, next scheduled tests) followed by the canonical SMART attribute table (ID, NAME, CURRENT, WORST, THRESHOLD, RAW, STATUS). Backed by the same two endpoints. `--json` returns `{ "health": { "<disk_id>": { "overview": …, "smart_info": [...], "reallocated": N, "pending": N, "error": "…" } } }`. Unknown `--disk <id>` exits 1 with `validation_error`.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added:
+  - "info disks: per-bay drive state table (BAY/NAME/MODEL/SIZE/TYPE/TEMP/AGE/HEALTH/USED BY). HEALTH combines DSM flags with raw SMART id 5/197 for early warning. JSON keys: storage, health[<id>].overview, health[<id>].reallocated, health[<id>].pending, health[<id>].error (best-effort per-disk SMART failures)"
+  - "info disks smart: detailed SMART overview + canonical attribute table per drive. JSON keys: health[<id>].overview, health[<id>].smart_info, health[<id>].reallocated, health[<id>].pending, health[<id>].error"
+commands_changed: []
+flags_added:
+  - "info disks smart --disk <id>: limit to a single disk by id (e.g. sda); unknown id exits 1 with validation_error"
+flags_changed: []
+behavior_changes: []
+skill_update_action: "Document `synocli info disks` and `synocli info disks smart`, the --disk flag, the HEALTH verdict semantics (DSM flags + raw SMART id 5/197), and the JSON schemas under `health[<disk_id>]`."
+```
+
 ## [0.4.8] - 2026-05-22
 
 ### Added
