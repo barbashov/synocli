@@ -15,6 +15,18 @@ func TestToAppErrorFileStationMessage(t *testing.T) {
 	}
 }
 
+func TestToAppErrorDownloadStationTaskNotFoundExitCode(t *testing.T) {
+	// DS v1 returns 404 and DS2 returns 501 for "task does not exist"; both
+	// must surface as exit code 3 so callers can branch on it regardless of
+	// NAS firmware.
+	for _, code := range []int{404, 501} {
+		err := toAppError(&downloadstation.APIError{Code: code})
+		if got := apperr.ExitCode(err); got != 3 {
+			t.Fatalf("ExitCode for synology code %d = %d, want 3", code, got)
+		}
+	}
+}
+
 func TestToAppErrorDownloadStationFailedTaskDetails(t *testing.T) {
 	err := toAppError(&downloadstation.APIError{
 		Code: 405,

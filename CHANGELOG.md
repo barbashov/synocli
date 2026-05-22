@@ -17,6 +17,23 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.10] - 2026-05-22
+
+### Fixed
+- `ds get <unknown-id>` on DS2-capable NAS firmware now exits 3 (`synology_error`) instead of 1. Previously only DS v1's code 404 mapped to exit 3; DS2 returns code 501 for the same "task not found" condition and is now mapped equivalently. The stderr message is also `invalid task id` instead of `unmapped`.
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "ds get <unknown-id> on DS2 firmware now exits 3 (was 1); DS v1 behavior unchanged. DS error code 501 is mapped to message 'invalid task id' (was 'unmapped')."
+skill_update_action: "No skill update required (exit-code mapping only; no command or flag surface changed)."
+```
+
 ## [0.4.9] - 2026-05-22
 
 ### Added

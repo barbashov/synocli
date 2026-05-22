@@ -16,7 +16,11 @@ func toAppError(err error) error {
 	if errors.As(err, &dsErr) {
 		code := "synology_error"
 		exit := 1
-		if dsErr.Code == 404 {
+		// DS v1 reports 404 for "task not found"; DS2 (SYNO.DownloadStation2.Task)
+		// reports 501 for the same condition. Treat both as "thing-you-asked-for-
+		// does-not-exist" so callers can branch on exit code 3 regardless of NAS
+		// firmware. Add further DS2-specific codes here as they are discovered.
+		if dsErr.Code == 404 || dsErr.Code == 501 {
 			exit = 3
 		}
 		details := map[string]any{

@@ -153,6 +153,7 @@ var errorMessages = map[int]string{
 	406: "no default destination",
 	407: "set destination failed",
 	408: "file does not exist",
+	501: "invalid task id",
 	120: "required parameter missing",
 }
 
