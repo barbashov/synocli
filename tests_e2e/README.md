@@ -103,5 +103,6 @@ Useful pytest options (forward via `PYTEST_ARGS=...` when using Docker):
 | FS compress/extract sync + async | `tests/test_fs_archive.py` |
 | FS `tasks` list + `tasks-clear` | `tests/test_fs_tasks.py` |
 | DS add (URL / magnet / torrent) / list / get / pause / wait timeout (exit 5) / resume / watch snapshot / delete | `tests/test_ds_lifecycle.py` |
+| DS `files list` / `files set` (--skip/--all) / `files priority` on a multi-file torrent + out-of-range exit 1 + unknown-task exit 3 | `tests/test_ds_files.py` |
 | DS bandwidth get/set with restore + validation | `tests/test_ds_bandwidth.py` |
 | DS max-tasks get/set with restore + range/parse validation | `tests/test_ds_max_tasks.py` |

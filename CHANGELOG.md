@@ -17,6 +17,30 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.11] - 2026-05-24
+
+### Added
+- `synocli ds files list <task-id>` (alias `ls`) — list the files inside a multi-file BT/torrent task in a table: INDEX, NAME, SIZE, DOWNLOADED, PROGRESS, WANTED, PRIORITY. `--json` returns `{ "task_id": "...", "files": [ { "index", "name", "size", "downloaded_size", "priority", "wanted" } ] }`. Backed by `SYNO.DownloadStation2.Task.BT.File` (`list`) on `entry.cgi`. A task that has no file list yet — a just-added torrent whose metadata has not been parsed — returns synology code 1913 ("BT file list not ready"); an unknown task id exits 3.
+- `synocli ds files set <task-id>` — choose which files in a multi-file BT task to download. Use `--include <indices>` / `--skip <indices>` (indices from `ds files list`), or `--all` / `--none`. Selection flags are mutually-exclusive in intent and every index is validated against the task's current file list before any change is sent, because DSM rejects out-of-range indices with an opaque code (1911). `--json` returns `{ "task_id", "wanted": [...], "skipped": [...] }`. Backed by `SYNO.DownloadStation2.Task.BT.File` (`set`, `wanted`).
+- `synocli ds files priority <task-id> <low|normal|high>` — set download priority for files selected with `--index <indices>` or `--all`. Priority is independent of whether a file is wanted. `--json` returns `{ "task_id", "priority", "indices": [...] }`. Backed by `SYNO.DownloadStation2.Task.BT.File` (`set`, `priority`).
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added:
+  - "ds files list <task-id> (alias ls): list files inside a multi-file BT task — INDEX/NAME/SIZE/DOWNLOADED/PROGRESS/WANTED/PRIORITY. JSON: { task_id, files:[{index,name,size,downloaded_size,priority,wanted}] }. Just-added torrents without parsed metadata return synology code 1913 ('BT file list not ready'); unknown task id exits 3. Backed by SYNO.DownloadStation2.Task.BT.File on entry.cgi."
+  - "ds files set <task-id>: choose which files to download/skip via --include/--skip/--all/--none. Indices validated client-side against the task's file list (DSM rejects out-of-range indices with opaque code 1911) -> exit 1 validation_error. JSON: { task_id, wanted:[...], skipped:[...] }."
+  - "ds files priority <task-id> <low|normal|high>: set per-file download priority for files selected with --index or --all; independent of wanted-ness. JSON: { task_id, priority, indices:[...] }."
+commands_changed: []
+flags_added:
+  - "ds files set --include <indices>, --skip <indices>, --all, --none"
+  - "ds files priority --index <indices>, --all"
+flags_changed: []
+behavior_changes:
+  - "Download Station error codes 1911 ('invalid file index') and 1913 ('BT file list not ready') are now mapped to human messages instead of 'unmapped'."
+skill_update_action: "Document `ds files list`, `ds files set`, and `ds files priority`: the list->index->set workflow, the --include/--skip/--all/--none and --index/--all flag UX, client-side index validation (exit 1 validation_error), the 1913 'metadata not ready' state on freshly-added torrents, and the JSON schemas."
+```
+
 ## [0.4.10] - 2026-05-22
 
 ### Fixed
