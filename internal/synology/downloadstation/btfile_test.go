@@ -204,6 +204,55 @@ func TestSetBTFileWantedPropagatesAPIError(t *testing.T) {
 	}
 }
 
+// Regression: a multi-file torrent with more indices than fit in one URL must
+// be split across multiple set requests, each carrying a subset.
+func TestSetBTFileWantedChunksLargeIndexList(t *testing.T) {
+	total := maxBTFileIndicesPerRequest*2 + 7
+	indices := make([]int64, total)
+	for i := range indices {
+		indices[i] = int64(i)
+	}
+
+	var requests int
+	var seen int
+	c := newBTFileTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		q, _ := url.QueryUnescape(r.URL.RawQuery)
+		// crude count of indices in this request's array
+		start := strings.Index(q, "index=[")
+		if start >= 0 {
+			arr := q[start+len("index=[") :]
+			if end := strings.Index(arr, "]"); end >= 0 {
+				arr = arr[:end]
+				if arr != "" {
+					seen += strings.Count(arr, ",") + 1
+				}
+			}
+		}
+		_, _ = w.Write([]byte(`{"success":true}`))
+	})
+	if err := c.SetBTFileWanted(context.Background(), "dbid_4065", indices, false); err != nil {
+		t.Fatalf("SetBTFileWanted: %v", err)
+	}
+	wantRequests := 3 // 500 + 500 + 7
+	if requests != wantRequests {
+		t.Errorf("requests = %d, want %d", requests, wantRequests)
+	}
+	if seen != total {
+		t.Errorf("total indices sent = %d, want %d", seen, total)
+	}
+}
+
+func TestChunkInt64(t *testing.T) {
+	if got := chunkInt64(nil, 3); got != nil {
+		t.Errorf("chunkInt64(nil) = %v, want nil", got)
+	}
+	got := chunkInt64([]int64{1, 2, 3, 4, 5}, 2)
+	if len(got) != 3 || len(got[0]) != 2 || len(got[2]) != 1 {
+		t.Errorf("unexpected chunks: %v", got)
+	}
+}
+
 func TestMapBTFile(t *testing.T) {
 	m := MapBTFile(BTFile{Index: 2, Name: "poster.jpg", Size: 310380, SizeDownloaded: 0, Priority: "normal", Wanted: false})
 	want := map[string]any{

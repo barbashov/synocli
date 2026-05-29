@@ -17,6 +17,40 @@ behavior_changes: []
 skill_update_action: "No skill update required until this section is released."
 ```
 
+## [0.4.12] - 2026-05-29
+
+### Fixed
+- `fs search` (synchronous form) no longer caps results at 1000 — it now returns every matching file, consistent with `fs search results` and the project's no-pagination rule. Validated against a live NAS returning 22,188 files.
+- `fs download` is now atomic: the file is streamed to a temp file in the same directory and renamed into place only on success, so a mid-transfer failure no longer truncates or destroys an existing file at the output path.
+- `fs upload` / `fs download` no longer inherit the client's 30s wall-clock timeout, which previously aborted large but healthy transfers; transfers are now bounded only by context cancellation.
+- `ds add <file>` no longer crashes on a malformed/hostile `.torrent`: the bencode validator rejected a string length near `MaxInt64` only after an integer overflow that caused a slice-bounds panic, and deeply-nested input could overflow the stack. Both are now rejected with a clean validation error.
+- Self-update downloads are now size-capped (256 MiB archive / 1 MiB checksums) before checksum verification, so a compromised or MITM'd release endpoint cannot exhaust memory.
+- `auth whoami` / `auth ping` now report the correct username when authenticating via `--credentials-file` with a cached session (`reuse_session`); the username was previously blank on that path.
+- `fs search clear` now surfaces transport and expired-session errors (so automatic re-login can occur) instead of misreporting them as per-task clear failures.
+- Debug-log redaction widened to more secret-bearing field names (`secret`, `key`, `api_key`, `apikey`, `passphrase`) and headers (`proxy-authorization` and any header containing `token`/`auth`/`secret`).
+- The Storage SMART API call now sends its own API version instead of reusing the Storage API version; `apiinfo.Select` no longer returns a version below the server's advertised minimum.
+- BT file `set`/`priority` requests now chunk large index lists across multiple requests to stay under server URL limits.
+- `FormatBytes` handles negative inputs and sizes above 1 PiB (adds PB/EB units).
+
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes:
+  - "fs search (synchronous): returns ALL matching files instead of capping at 1000; large recursive searches now return complete result sets (JSON result.files / result.total)."
+  - "fs download: now atomic (temp file + rename); an existing output file is preserved if the transfer fails mid-stream. Output file mode is 0644."
+  - "fs upload / fs download: no longer subject to the global request timeout; large transfers are bounded only by context/cancellation, not the configured --timeout."
+  - "ds add: a malformed/corrupt .torrent now fails with a clean 'invalid torrent file' validation error instead of panicking."
+  - "cli-update / self-update: downloaded assets are size-capped before checksum verification."
+  - "auth whoami / auth ping: username is now reported correctly when using --credentials-file together with a cached reuse_session."
+  - "fs search clear: session-expiry/transport errors now propagate (enabling auto re-login) rather than being reported as per-task failures."
+  - "Debug (--debug) redaction covers more secret field names and headers."
+skill_update_action: "Update the fs search description to note it returns all results (no 1000-item cap). No command/flag signature changes; other fixes are internal robustness/security and need no skill changes."
+```
+
 ## [0.4.11] - 2026-05-24
 
 ### Added

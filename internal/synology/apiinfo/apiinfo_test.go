@@ -33,3 +33,12 @@ func TestSelect(t *testing.T) {
 		t.Fatalf("unexpected fallback %s %d", path, version)
 	}
 }
+
+// Regression: never return a version below the server's advertised minimum.
+func TestSelectClampsToMinVersion(t *testing.T) {
+	entries := map[string]Entry{"A": {Path: "p.cgi", MinVersion: 4, MaxVersion: 0}}
+	_, version := Select(entries, "A", "/fallback", 1)
+	if version != 4 {
+		t.Fatalf("version = %d, want 4 (clamped up to MinVersion)", version)
+	}
+}

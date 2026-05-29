@@ -51,7 +51,7 @@ func ValidateEndpoint(raw string) (*url.URL, error) {
 
 func (o *GlobalOptions) ResolvePassword(stdin io.Reader) error {
 	if o.CredentialsFile != "" {
-		if err := o.loadCredentialsFile(); err != nil {
+		if err := o.LoadCredentialsFile(); err != nil {
 			return err
 		}
 	}
@@ -160,7 +160,10 @@ func ParseConfigFile(content string) (GlobalOptions, error) {
 	return out, nil
 }
 
-func (o *GlobalOptions) loadCredentialsFile() error {
+// LoadCredentialsFile populates User and Password from the credentials file.
+// It is the authoritative source for both when --credentials-file is used, and
+// is safe to call more than once.
+func (o *GlobalOptions) LoadCredentialsFile() error {
 	info, err := os.Stat(o.CredentialsFile)
 	if err != nil {
 		return fmt.Errorf("read credentials file: %w", err)

@@ -46,8 +46,14 @@ func (a *appContext) resolveRuntimeOptions(cmd *cobra.Command) (config.GlobalOpt
 		if cmd.Flags().Lookup("user").Changed || cmd.Flags().Lookup("password").Changed || out.PasswordStdin {
 			return config.GlobalOptions{}, errors.New("use --credentials-file without --user, --password, or --password-stdin")
 		}
+		// The credentials file is authoritative; load it now (rather than only at
+		// login time) so identity output (whoami/ping) is correct even when a
+		// cached session skips the login that would otherwise populate User.
 		out.User = ""
 		out.Password = ""
+		if err := out.LoadCredentialsFile(); err != nil {
+			return config.GlobalOptions{}, err
+		}
 	}
 	if out.Password != "" && out.PasswordStdin {
 		return config.GlobalOptions{}, errors.New("use only one of --password or --password-stdin")

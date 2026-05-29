@@ -42,7 +42,9 @@ func (c *Client) WaitSearch(ctx context.Context, taskID string, interval, maxWai
 	}
 	for {
 		var out map[string]any
-		if err := c.Call(ctx, APISearch, "list", url.Values{"taskid": {taskID}, "offset": {"0"}, "limit": {"1000"}}, &out); err != nil {
+		// limit=0 means "all results" per DSM convention; never cap the snapshot
+		// returned for a non-async search (matches the `fs search results` command).
+		if err := c.Call(ctx, APISearch, "list", url.Values{"taskid": {taskID}, "offset": {"0"}, "limit": {"0"}}, &out); err != nil {
 			return nil, err
 		}
 		if isFinished(out) {

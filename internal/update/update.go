@@ -29,6 +29,12 @@ const (
 
 	successInterval = 24 * time.Hour
 	failureInterval = 6 * time.Hour
+
+	// Caps on remote reads during self-update, enforced before checksum
+	// verification so a compromised/MITM'd endpoint cannot exhaust memory by
+	// streaming an arbitrarily large body.
+	maxArchiveBytes = 256 << 20 // 256 MiB
+	maxSumsBytes    = 1 << 20   // 1 MiB
 )
 
 var semverRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)$`)
@@ -377,11 +383,11 @@ func (c *Client) ApplyUpdate(ctx context.Context, release Release, currentVersio
 		return res, errors.New("release asset not found: SHA256SUMS")
 	}
 
-	archiveBytes, err := c.downloadAsset(ctx, archiveURL, true)
+	archiveBytes, err := c.downloadAsset(ctx, archiveURL, true, maxArchiveBytes)
 	if err != nil {
 		return res, fmt.Errorf("download %s: %w", archiveName, err)
 	}
-	sumsBytes, err := c.downloadAsset(ctx, sumsURL, false)
+	sumsBytes, err := c.downloadAsset(ctx, sumsURL, false, maxSumsBytes)
 	if err != nil {
 		return res, fmt.Errorf("download SHA256SUMS: %w", err)
 	}
@@ -417,7 +423,7 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (c *Client) downloadAsset(ctx context.Context, url string, reportProgress bool) ([]byte, error) {
+func (c *Client) downloadAsset(ctx context.Context, url string, reportProgress bool, maxBytes int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build download request: %w", err)
@@ -443,9 +449,23 @@ func (c *Client) downloadAsset(ctx context.Context, url string, reportProgress b
 	if reportProgress && c.OnProgress != nil {
 		src = &progressReader{r: resp.Body, total: total, fn: c.OnProgress}
 	}
-	b, err := io.ReadAll(src)
+	b, err := readCapped(src, maxBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read download body: %w", err)
+	}
+	return b, nil
+}
+
+// readCapped reads from r but fails if more than maxBytes are available, so a
+// hostile endpoint cannot stream an unbounded body into memory. It reads one
+// extra byte past the cap to distinguish "exactly at the limit" from "over".
+func readCapped(r io.Reader, maxBytes int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > maxBytes {
+		return nil, fmt.Errorf("download exceeds maximum allowed size of %d bytes", maxBytes)
 	}
 	return b, nil
 }
@@ -512,7 +532,7 @@ func extractBinaryFromTarGz(archiveBytes []byte) ([]byte, error) {
 		if name != "synocli" {
 			continue
 		}
-		b, err := io.ReadAll(tr)
+		b, err := readCapped(tr, maxArchiveBytes)
 		if err != nil {
 			return nil, fmt.Errorf("read binary from tar.gz: %w", err)
 		}
@@ -537,7 +557,7 @@ func extractBinaryFromZip(archiveBytes []byte) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("open binary from zip: %w", err)
 		}
-		b, readErr := io.ReadAll(rc)
+		b, readErr := readCapped(rc, maxArchiveBytes)
 		_ = rc.Close()
 		if readErr != nil {
 			return nil, fmt.Errorf("read binary from zip: %w", readErr)

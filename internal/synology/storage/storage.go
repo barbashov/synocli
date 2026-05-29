@@ -212,7 +212,7 @@ func (c *Client) GetHealthInfo(ctx context.Context, device, diskID string) (*Hea
 	var raw struct {
 		HealthInfo HealthInfo `json:"healthInfo"`
 	}
-	if err := c.callAPIJSON(ctx, smartAPIName, "get_health_info", extra, &raw); err != nil {
+	if err := c.callAPIJSON(ctx, smartAPIName, smartVersion, "get_health_info", extra, &raw); err != nil {
 		return nil, err
 	}
 	hi := raw.HealthInfo

@@ -61,5 +61,10 @@ func Select(entries map[string]Entry, api string, fallbackPath string, fallbackV
 	if version <= 0 {
 		version = fallbackVersion
 	}
+	// Never return a version below the server's advertised minimum; callers
+	// then clamp down to their own locally-supported maximum.
+	if entry.MinVersion > 0 && version < entry.MinVersion {
+		version = entry.MinVersion
+	}
 	return "/webapi/" + entry.Path, version
 }

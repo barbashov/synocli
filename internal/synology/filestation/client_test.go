@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewClientValidation(t *testing.T) {
@@ -105,5 +106,26 @@ func TestErrorMessage(t *testing.T) {
 		if got := ErrorMessage(tc.code); got != tc.want {
 			t.Errorf("ErrorMessage(%d) = %q, want %q", tc.code, got, tc.want)
 		}
+	}
+}
+
+// Regression: streaming transfers must not inherit the shared client's
+// wall-clock Timeout (which would abort large but healthy transfers), while
+// still sharing the underlying Transport and cookie jar.
+func TestTransferClientHasNoTimeout(t *testing.T) {
+	shared := &http.Client{Timeout: 30 * time.Second, Transport: http.DefaultTransport}
+	c, err := NewClient("https://nas:5001", "sidv", shared, nil)
+	if err != nil {
+		t.Fatalf("NewClient error: %v", err)
+	}
+	tc := c.transferClient()
+	if tc.Timeout != 0 {
+		t.Fatalf("transfer client Timeout = %v, want 0", tc.Timeout)
+	}
+	if tc.Transport != shared.Transport {
+		t.Fatal("transfer client must share the underlying Transport")
+	}
+	if shared.Timeout != 30*time.Second {
+		t.Fatal("shared client Timeout must be left unchanged")
 	}
 }

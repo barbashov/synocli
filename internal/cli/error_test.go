@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"testing"
 
 	"synocli/internal/apperr"
@@ -10,8 +11,24 @@ import (
 
 func TestToAppErrorFileStationMessage(t *testing.T) {
 	err := toAppError(&filestation.APIError{Code: 408})
-	if got := err.Error(); got != "file or folder does not exist" {
+	// The mapped human message leads; the wrapped APIError detail follows
+	// (consistent with the Download Station branch, which also wraps Err).
+	if got := err.Error(); got != "file or folder does not exist: file station api error code=408 (file or folder does not exist)" {
 		t.Fatalf("unexpected message: %q", got)
+	}
+}
+
+// Regression: the FileStation branch must preserve the underlying error so the
+// original *filestation.APIError stays unwrappable (parity with the DS branch).
+func TestToAppErrorFileStationPreservesWrappedError(t *testing.T) {
+	orig := &filestation.APIError{Code: 408}
+	err := toAppError(orig)
+	var fsErr *filestation.APIError
+	if !errors.As(err, &fsErr) {
+		t.Fatalf("underlying *filestation.APIError not unwrappable from %T", err)
+	}
+	if fsErr != orig {
+		t.Fatalf("unwrapped error is not the original")
 	}
 }
 

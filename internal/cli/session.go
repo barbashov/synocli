@@ -190,6 +190,15 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 	return nil
 }
 
+// isPerTaskFailure reports whether err is a genuine per-task FileStation error
+// (so a batch operation can record that one id failed and continue) rather than
+// an infrastructure or expired-session error, which must propagate so the
+// caller can retry / re-login.
+func isPerTaskFailure(err error) bool {
+	var apiErr *filestation.APIError
+	return errors.As(err, &apiErr) && !isSessionExpiry(err)
+}
+
 func isSessionExpiry(err error) bool {
 	var dsErr *downloadstation.APIError
 	if errors.As(err, &dsErr) {

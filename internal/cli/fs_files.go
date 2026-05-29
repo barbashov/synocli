@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -488,14 +489,9 @@ func newFSDownloadCmd(ac *appContext) *cobra.Command {
 					}
 					return nil, fmt.Errorf("download failed: %v", out)
 				}
-				f, err := os.Create(outputPath)
+				n, err := streamToFileAtomic(outputPath, resp.Body)
 				if err != nil {
-					return nil, fmt.Errorf("create output file: %w", err)
-				}
-				defer func() { _ = f.Close() }()
-				n, err := io.Copy(f, resp.Body)
-				if err != nil {
-					return nil, fmt.Errorf("write output file: %w", err)
+					return nil, err
 				}
 				data := map[string]any{"output": outputPath, "bytes": n, "paths": args}
 				if ac.opts.JSON {
@@ -574,4 +570,37 @@ func fsFileMTime(file map[string]any) int64 {
 		}
 	}
 	return 0
+}
+
+// streamToFileAtomic copies body into a temp file in the same directory as
+// outputPath and renames it into place only on success. A mid-stream failure
+// therefore never truncates or destroys an existing file at outputPath.
+func streamToFileAtomic(outputPath string, body io.Reader) (int64, error) {
+	tmp, err := os.CreateTemp(filepath.Dir(outputPath), ".synocli-download-*")
+	if err != nil {
+		return 0, fmt.Errorf("create output file: %w", err)
+	}
+	tmpName := tmp.Name()
+	success := false
+	defer func() {
+		_ = tmp.Close()
+		if !success {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	n, err := io.Copy(tmp, body)
+	if err != nil {
+		return 0, fmt.Errorf("write output file: %w", err)
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		return 0, fmt.Errorf("set output file mode: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return 0, fmt.Errorf("close output file: %w", err)
+	}
+	if err := os.Rename(tmpName, outputPath); err != nil {
+		return 0, fmt.Errorf("finalize output file: %w", err)
+	}
+	success = true
+	return n, nil
 }

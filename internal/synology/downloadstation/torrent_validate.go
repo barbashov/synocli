@@ -33,9 +33,14 @@ func ValidateTorrentFile(path string) error {
 	return nil
 }
 
+// maxBencodeDepth bounds nesting in parseValue so a crafted torrent of deeply
+// nested lists/dicts (e.g. "llll…") cannot overflow the goroutine stack.
+const maxBencodeDepth = 100
+
 type torrentBencodeParser struct {
-	data []byte
-	pos  int
+	data  []byte
+	pos   int
+	depth int
 }
 
 func (p *torrentBencodeParser) parseValue() (any, error) {
@@ -58,6 +63,11 @@ func (p *torrentBencodeParser) parseValue() (any, error) {
 }
 
 func (p *torrentBencodeParser) parseDict() (map[string]any, error) {
+	if p.depth >= maxBencodeDepth {
+		return nil, fmt.Errorf("bencode nesting too deep")
+	}
+	p.depth++
+	defer func() { p.depth-- }()
 	p.pos++
 	out := map[string]any{}
 	for {
@@ -85,6 +95,11 @@ func (p *torrentBencodeParser) parseDict() (map[string]any, error) {
 }
 
 func (p *torrentBencodeParser) parseList() ([]any, error) {
+	if p.depth >= maxBencodeDepth {
+		return nil, fmt.Errorf("bencode nesting too deep")
+	}
+	p.depth++
+	defer func() { p.depth-- }()
 	p.pos++
 	out := []any{}
 	for {
@@ -136,15 +151,19 @@ func (p *torrentBencodeParser) parseString() (any, error) {
 		return nil, fmt.Errorf("invalid string length")
 	}
 	lengthRaw := string(p.data[start:p.pos])
-	length, err := strconv.Atoi(lengthRaw)
+	// ParseInt + a bound against the remaining bytes (computed before forming
+	// the slice end) avoids the integer overflow that p.pos+length would hit
+	// for a length near MaxInt64, which previously defeated both guards and
+	// panicked with a slice-bounds error.
+	length, err := strconv.ParseInt(lengthRaw, 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid string length %q", lengthRaw)
 	}
 	p.pos++
-	end := p.pos + length
-	if length < 0 || end > len(p.data) {
-		return nil, fmt.Errorf("string exceeds input")
+	if length < 0 || length > int64(len(p.data)-p.pos) {
+		return nil, fmt.Errorf("string length %d exceeds input", length)
 	}
+	end := p.pos + int(length)
 	s := string(p.data[p.pos:end])
 	p.pos = end
 	return s, nil

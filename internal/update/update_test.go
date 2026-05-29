@@ -1,11 +1,54 @@
 package update
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+// Regression: a self-update download must be bounded before checksum
+// verification so a hostile endpoint cannot stream an unbounded body.
+func TestDownloadAssetEnforcesSizeCap(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Stream more than the cap without advertising Content-Length.
+		buf := make([]byte, 1024)
+		for written := 0; written < 5000; written += len(buf) {
+			_, _ = w.Write(buf)
+		}
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.Client())
+	_, err := c.downloadAsset(context.Background(), ts.URL, false, 4096)
+	if err == nil {
+		t.Fatal("expected size-cap error, got nil")
+	}
+	if !strings.Contains(err.Error(), "maximum allowed size") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDownloadAssetUnderCap(t *testing.T) {
+	payload := []byte("small-payload")
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(payload)
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.Client())
+	got, err := c.downloadAsset(context.Background(), ts.URL, false, 4096)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("got %q, want %q", got, payload)
+	}
+}
 
 func TestIsNewerVersion(t *testing.T) {
 	tests := []struct {

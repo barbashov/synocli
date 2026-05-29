@@ -142,9 +142,18 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 				return ac.withSession(cmd, joinCommand("fs", "search", "clear"), func(ctx context.Context, s *session) (any, error) {
 					var failed []string
 					for _, taskID := range args {
-						if err := s.fsClient.Call(ctx, filestation.APISearch, "clean", makeValues("taskid", taskID), nil); err != nil {
-							failed = append(failed, taskID)
+						err := s.fsClient.Call(ctx, filestation.APISearch, "clean", makeValues("taskid", taskID), nil)
+						if err == nil {
+							continue
 						}
+						// Only a genuine per-task FileStation error counts as
+						// "this task id failed to clear". Infrastructure or
+						// expired-session errors must propagate so withSession
+						// can retry/re-login.
+						if !isPerTaskFailure(err) {
+							return nil, err
+						}
+						failed = append(failed, taskID)
 					}
 					if len(failed) > 0 {
 						return nil, apperr.New("partial_failure", fmt.Sprintf("failed to clear task(s): %s", strings.Join(failed, ", ")), 1)

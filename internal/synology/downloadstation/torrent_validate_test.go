@@ -47,6 +47,32 @@ func TestValidateTorrentFile(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
+
+	// Regression: a string length near MaxInt64 used to overflow p.pos+length to
+	// a negative value, defeat both guards, and panic with a slice-bounds error.
+	t.Run("string_length_overflow", func(t *testing.T) {
+		path := writeTorrentFixture(t, []byte("9223372036854775800:x"))
+		err := ValidateTorrentFile(path)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "exceeds input") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	// Regression: deeply nested containers used to recurse once per byte and
+	// overflow the goroutine stack; the depth guard now rejects them.
+	t.Run("deeply_nested", func(t *testing.T) {
+		path := writeTorrentFixture(t, []byte(strings.Repeat("l", maxBencodeDepth+5)))
+		err := ValidateTorrentFile(path)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "nesting too deep") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 func writeTorrentFixture(t *testing.T, data []byte) string {

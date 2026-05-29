@@ -178,6 +178,28 @@ func TestGetHealthInfoDecodesFixture(t *testing.T) {
 	}
 }
 
+// Regression: the Smart API must send its own version, not the (separately
+// discovered/clamped) Storage API version held in c.version.
+func TestGetHealthInfoUsesSmartVersionNotStorageVersion(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RawQuery
+		_, _ = w.Write([]byte(fixtureHealthInfoBody))
+	}))
+	t.Cleanup(srv.Close)
+	// Storage API discovered as version 5; Smart must still be requested at v1.
+	c, err := NewClient(srv.URL, "test-sid", srv.Client(), "", 5)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if _, err := c.GetHealthInfo(context.Background(), "/dev/sda", "sda"); err != nil {
+		t.Fatalf("GetHealthInfo: %v", err)
+	}
+	if !strings.Contains(query, "version=1") || strings.Contains(query, "version=5") {
+		t.Fatalf("Smart call used wrong version: %s", query)
+	}
+}
+
 func TestGetHealthInfoRequiresDeviceAndDiskID(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("should not call DSM, got %s", r.URL.RawQuery)

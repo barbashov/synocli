@@ -263,7 +263,7 @@ func (c *Client) Upload(ctx context.Context, params map[string]string, localPath
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.AddCookie(&http.Cookie{Name: "id", Value: c.sid})
-	resp, err := c.http.Do(req)
+	resp, err := c.transferClient().Do(req)
 	if err != nil {
 		_ = pr.CloseWithError(err)
 		<-errCh
@@ -298,11 +298,21 @@ func (c *Client) Download(ctx context.Context, params url.Values) (*http.Respons
 		return nil, fmt.Errorf("build download request: %w", err)
 	}
 	req.AddCookie(&http.Cookie{Name: "id", Value: c.sid})
-	resp, err := c.http.Do(req)
+	resp, err := c.transferClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download request failed: %w", err)
 	}
 	return resp, nil
+}
+
+// transferClient returns a copy of the shared HTTP client with no wall-clock
+// Timeout, for streaming uploads/downloads. The shared client's Timeout bounds
+// the entire request including the body, which would abort a large but
+// healthy transfer; cancellation here is driven solely by the request context.
+func (c *Client) transferClient() *http.Client {
+	tc := *c.http
+	tc.Timeout = 0
+	return &tc
 }
 
 func decodeJSON(r io.Reader, out any) error {

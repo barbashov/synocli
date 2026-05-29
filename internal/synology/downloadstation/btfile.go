@@ -64,38 +64,58 @@ func (c *Client) ListBTFiles(ctx context.Context, taskID string) ([]BTFile, erro
 	return resp.Data.Items, nil
 }
 
+// maxBTFileIndicesPerRequest bounds how many file indices are serialized into a
+// single set request's URL, so a torrent with many thousands of files cannot
+// produce a GET URL that exceeds server limits. Each set call applies to its
+// own subset, so chunking is semantically equivalent to one large call.
+const maxBTFileIndicesPerRequest = 500
+
 // SetBTFileWanted marks the given file indices as wanted (downloaded) or not.
 // Indices not listed are left unchanged.
 func (c *Client) SetBTFileWanted(ctx context.Context, taskID string, indices []int64, wanted bool) error {
-	if len(indices) == 0 {
-		return nil
-	}
-	vals := c.btFileBaseValues("set")
-	vals.Set("task_id", taskID)
-	idxJSON, err := json.Marshal(indices)
-	if err != nil {
-		return fmt.Errorf("encode index: %w", err)
-	}
-	vals.Set("index", string(idxJSON))
-	vals.Set("wanted", strconv.FormatBool(wanted))
-	return c.doBTFileRequest(ctx, vals, nil)
+	return c.setBTFileField(ctx, taskID, indices, "wanted", strconv.FormatBool(wanted))
 }
 
 // SetBTFilePriority sets the download priority ("low"|"normal"|"high") for the
 // given file indices. Priority is independent of wanted-ness.
 func (c *Client) SetBTFilePriority(ctx context.Context, taskID string, indices []int64, priority string) error {
-	if len(indices) == 0 {
-		return nil
+	return c.setBTFileField(ctx, taskID, indices, "priority", priority)
+}
+
+// setBTFileField issues one or more `set` requests, chunking indices to keep
+// each request URL within server limits.
+func (c *Client) setBTFileField(ctx context.Context, taskID string, indices []int64, field, value string) error {
+	for _, chunk := range chunkInt64(indices, maxBTFileIndicesPerRequest) {
+		vals := c.btFileBaseValues("set")
+		vals.Set("task_id", taskID)
+		idxJSON, err := json.Marshal(chunk)
+		if err != nil {
+			return fmt.Errorf("encode index: %w", err)
+		}
+		vals.Set("index", string(idxJSON))
+		vals.Set(field, value)
+		if err := c.doBTFileRequest(ctx, vals, nil); err != nil {
+			return err
+		}
 	}
-	vals := c.btFileBaseValues("set")
-	vals.Set("task_id", taskID)
-	idxJSON, err := json.Marshal(indices)
-	if err != nil {
-		return fmt.Errorf("encode index: %w", err)
+	return nil
+}
+
+// chunkInt64 splits s into consecutive slices of at most size elements. An empty
+// input yields no chunks, so callers issue no request for an empty selection.
+func chunkInt64(s []int64, size int) [][]int64 {
+	if size <= 0 {
+		return [][]int64{s}
 	}
-	vals.Set("index", string(idxJSON))
-	vals.Set("priority", priority)
-	return c.doBTFileRequest(ctx, vals, nil)
+	var out [][]int64
+	for start := 0; start < len(s); start += size {
+		end := start + size
+		if end > len(s) {
+			end = len(s)
+		}
+		out = append(out, s[start:end])
+	}
+	return out
 }
 
 func (c *Client) btFileBaseValues(method string) url.Values {

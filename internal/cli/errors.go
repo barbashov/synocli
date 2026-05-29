@@ -68,6 +68,7 @@ func toAppError(err error) error {
 			Message:  filestation.ErrorMessage(code),
 			ExitCode: 1,
 			Details:  details,
+			Err:      err,
 		}
 	}
 	var app *apperr.Error

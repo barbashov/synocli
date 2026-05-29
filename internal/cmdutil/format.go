@@ -6,13 +6,16 @@ import (
 )
 
 func FormatBytes(b int64) string {
-	if b == 0 {
+	// Sizes/speeds from the DSM API are non-negative; clamp anything negative
+	// rather than emit a nonsensical unit-less value.
+	if b <= 0 {
 		return "0 B"
 	}
-	units := []string{"B", "KB", "MB", "GB", "TB"}
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB", "EB"}
 	v := float64(b)
-	for _, u := range units {
-		if v < 1024 || u == "TB" {
+	last := len(units) - 1
+	for i, u := range units {
+		if v < 1024 || i == last {
 			if u == "B" {
 				return fmt.Sprintf("%d B", b)
 			}
@@ -20,7 +23,8 @@ func FormatBytes(b int64) string {
 		}
 		v /= 1024
 	}
-	return fmt.Sprintf("%.1f TB", v) // unreachable: loop handles TB
+	// Unreachable: the loop always returns at the last unit.
+	return fmt.Sprintf("%.1f %s", v, units[last])
 }
 
 func FormatSpeed(bps int64) string {

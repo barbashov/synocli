@@ -16,6 +16,10 @@ const (
 	smartAPIName   = "SYNO.Storage.CGI.Smart"
 	defaultPath    = "/webapi/entry.cgi"
 	defaultVersion = 1
+	// smartVersion is the SYNO.Storage.CGI.Smart API version. It is tracked
+	// separately from c.version (which is discovered/clamped for the Storage
+	// API only) so the two cannot drift onto the wrong wire version.
+	smartVersion = 1
 )
 
 type Client struct {
@@ -48,17 +52,17 @@ func NewClient(endpoint, sid string, httpClient *http.Client, path string, versi
 }
 
 func (c *Client) callJSON(ctx context.Context, method string, out any) error {
-	return c.callAPIJSON(ctx, apiName, method, nil, out)
+	return c.callAPIJSON(ctx, apiName, c.version, method, nil, out)
 }
 
-// callAPIJSON issues a GET to entry.cgi for the given DSM API name and method,
-// merging any caller-supplied extra query parameters and decoding the standard
-// envelope into out. Smart and Storage APIs share the same auth/cookie surface
-// so they live behind one helper.
-func (c *Client) callAPIJSON(ctx context.Context, api, method string, extra url.Values, out any) error {
+// callAPIJSON issues a GET to entry.cgi for the given DSM API name, version, and
+// method, merging any caller-supplied extra query parameters and decoding the
+// standard envelope into out. Smart and Storage APIs share the same auth/cookie
+// surface so they live behind one helper, but each passes its own version.
+func (c *Client) callAPIJSON(ctx context.Context, api string, version int, method string, extra url.Values, out any) error {
 	vals := url.Values{}
 	vals.Set("api", api)
-	vals.Set("version", strconv.Itoa(c.version))
+	vals.Set("version", strconv.Itoa(version))
 	vals.Set("method", method)
 	vals.Set("_sid", c.sid)
 	for k, vs := range extra {
