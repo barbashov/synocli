@@ -72,3 +72,13 @@ func (c *Client) taskAPIName() string {
 	}
 	return defaultAPIName
 }
+
+// isDS2 reports whether the selected task API speaks the DownloadStation2
+// dialect (JSON-encoded parameters) rather than the legacy comma-separated one.
+func (c *Client) isDS2() bool {
+	return isDS2API(c.taskAPIName())
+}
+
+func isDS2API(apiName string) bool {
+	return strings.HasPrefix(apiName, "SYNO.DownloadStation2.")
+}

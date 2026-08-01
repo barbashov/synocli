@@ -37,6 +37,11 @@ func NewHumanUI(w io.Writer) HumanUI {
 	return HumanUI{renderer: renderer, Styled: styled, Tty: tty}
 }
 
+// IsTerminal reports whether w is backed by an interactive terminal.
+func IsTerminal(w io.Writer) bool {
+	return isTTYWriter(w)
+}
+
 func isTTYWriter(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	if !ok {

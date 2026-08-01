@@ -128,3 +128,12 @@ func TestLoadConfigFilePermissions(t *testing.T) {
 		t.Fatal("expected permission error")
 	}
 }
+
+func TestValidateEndpointRejectsUserinfo(t *testing.T) {
+	if _, err := ValidateEndpoint("https://admin:secret@nas:5001"); err == nil {
+		t.Fatal("endpoint with embedded credentials must be rejected")
+	}
+	if _, err := ValidateEndpoint("https://nas:5001"); err != nil {
+		t.Fatalf("plain endpoint must pass: %v", err)
+	}
+}

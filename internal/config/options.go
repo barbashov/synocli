@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,13 @@ type GlobalOptions struct {
 	ReuseSession    bool
 }
 
+// PermTooOpen reports whether a credential-bearing file is readable by group
+// or others. Windows has no POSIX permission bits (Go reports 0666 for every
+// file there), so the check applies only on Unix-like systems.
+func PermTooOpen(mode os.FileMode) bool {
+	return runtime.GOOS != "windows" && mode&0077 != 0
+}
+
 func ValidateEndpoint(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -35,6 +43,10 @@ func ValidateEndpoint(raw string) (*url.URL, error) {
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, fmt.Errorf("endpoint must use http or https: %q", raw)
+	}
+	if u.User != nil {
+		// Embedded credentials would leak into JSON meta.endpoint and logs.
+		return nil, errors.New("endpoint must not contain credentials (user:password@host)")
 	}
 	if u.Host == "" {
 		return nil, fmt.Errorf("endpoint must include host: %q", raw)
@@ -90,7 +102,7 @@ func LoadConfigFile(path string, required bool) (GlobalOptions, error) {
 		}
 		return GlobalOptions{}, fmt.Errorf("read config file: %w", err)
 	}
-	if mode := info.Mode().Perm(); mode&0077 != 0 {
+	if mode := info.Mode().Perm(); PermTooOpen(mode) {
 		return GlobalOptions{}, fmt.Errorf("config file %s has too open permissions %04o; run: chmod 600 %s", path, mode, path)
 	}
 	b, err := os.ReadFile(path)
@@ -168,7 +180,7 @@ func (o *GlobalOptions) LoadCredentialsFile() error {
 	if err != nil {
 		return fmt.Errorf("read credentials file: %w", err)
 	}
-	if mode := info.Mode().Perm(); mode&0077 != 0 {
+	if mode := info.Mode().Perm(); PermTooOpen(mode) {
 		return fmt.Errorf("credentials file %s has too open permissions %04o; run: chmod 600 %s", o.CredentialsFile, mode, o.CredentialsFile)
 	}
 	b, err := os.ReadFile(o.CredentialsFile)

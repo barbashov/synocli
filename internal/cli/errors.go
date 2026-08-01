@@ -9,6 +9,8 @@ import (
 	"synocli/internal/output"
 	"synocli/internal/synology/downloadstation"
 	"synocli/internal/synology/filestation"
+	"synocli/internal/synology/storage"
+	"synocli/internal/synology/system"
 )
 
 func toAppError(err error) error {
@@ -68,6 +70,26 @@ func toAppError(err error) error {
 			Message:  filestation.ErrorMessage(code),
 			ExitCode: 1,
 			Details:  details,
+			Err:      err,
+		}
+	}
+	var sysErr *system.APIError
+	if errors.As(err, &sysErr) {
+		return &apperr.Error{
+			Code:     "synology_error",
+			Message:  system.ErrorMessage(sysErr.Code),
+			ExitCode: 1,
+			Details:  map[string]any{"synology_code": sysErr.Code},
+			Err:      err,
+		}
+	}
+	var stErr *storage.APIError
+	if errors.As(err, &stErr) {
+		return &apperr.Error{
+			Code:     "synology_error",
+			Message:  storage.ErrorMessage(stErr.Code),
+			ExitCode: 1,
+			Details:  map[string]any{"synology_code": stErr.Code},
 			Err:      err,
 		}
 	}

@@ -37,7 +37,10 @@ const (
 	maxSumsBytes    = 1 << 20   // 1 MiB
 )
 
-var semverRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)$`)
+var (
+	semverRe       = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)$`)
+	semverPrefixRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:$|[-+.])`)
+)
 
 type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -248,9 +251,13 @@ func IsNewerVersion(latest, current string) bool {
 	if !lok {
 		return false
 	}
-	cm, cok := parseSemver(current)
+	// Suffixed versions from source builds (v0.4.12-5-gabc1234) compare by
+	// their release prefix; a fully unparseable version (e.g. "dev") is not
+	// treated as outdated — replacing an unknown local build would be a
+	// silent downgrade.
+	cm, cok := parseSemverPrefix(current)
 	if !cok {
-		return true
+		return false
 	}
 	if lm.major != cm.major {
 		return lm.major > cm.major
@@ -268,7 +275,16 @@ type semver struct {
 }
 
 func parseSemver(v string) (semver, bool) {
-	m := semverRe.FindStringSubmatch(strings.TrimSpace(v))
+	return parseSemverMatch(semverRe.FindStringSubmatch(strings.TrimSpace(v)))
+}
+
+// parseSemverPrefix accepts a leading vX.Y.Z with an arbitrary suffix
+// (pre-release tags, git-describe output).
+func parseSemverPrefix(v string) (semver, bool) {
+	return parseSemverMatch(semverPrefixRe.FindStringSubmatch(strings.TrimSpace(v)))
+}
+
+func parseSemverMatch(m []string) (semver, bool) {
 	if m == nil {
 		return semver{}, false
 	}

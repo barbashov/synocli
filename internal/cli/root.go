@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -13,18 +14,32 @@ import (
 
 // Execute is the package entry point called by cmd/synocli/main.go.
 func Execute(stdin io.Reader, stdout, stderr io.Writer) error {
-	root := newRootCmd(stdin, stdout, stderr)
-	if err := root.Execute(); err != nil {
-		var handled *jsonOutputHandledError
-		if !errors.As(err, &handled) {
-			cmdutil.PrintError(stderr, err)
-		}
-		return err
-	}
-	return nil
+	root, ac := newRootCmd(stdin, stdout, stderr)
+	return runRoot(root, ac, stderr)
 }
 
-func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
+// runRoot executes the root command and routes errors that never reached
+// withSession (flag/arg validation, cobra usage) through the same output
+// contract: a JSON envelope in --json mode, plain stderr otherwise.
+func runRoot(root *cobra.Command, ac *appContext, stderr io.Writer) error {
+	start := time.Now()
+	cmd, err := root.ExecuteC()
+	if err == nil {
+		return nil
+	}
+	var handled *jsonOutputHandledError
+	if errors.As(err, &handled) {
+		return err
+	}
+	if ac.opts.JSON {
+		name := strings.TrimSpace(strings.TrimPrefix(cmd.CommandPath(), root.Name()))
+		return ac.outputError(name, ac.opts.Endpoint, start, toAppError(err))
+	}
+	cmdutil.PrintError(stderr, err)
+	return err
+}
+
+func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) (*cobra.Command, *appContext) {
 	ac := &appContext{stdin: stdin, out: stdout, err: stderr}
 	defaultConfigPath, _ := config.DefaultConfigPath()
 	ac.opts.ConfigPath = defaultConfigPath
@@ -36,6 +51,9 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			ac.maybeNotifyUpdate(cmd)
+			if cmd.Flags().Lookup("password") != nil && cmd.Flags().Lookup("password").Changed && cmdutil.IsTerminal(stderr) {
+				_, _ = io.WriteString(stderr, "warning: --password exposes the password to other local users via the process list; prefer --password-stdin or --credentials-file\n")
+			}
 			return nil
 		},
 	}
@@ -56,5 +74,5 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&ac.opts.Debug, "debug", false, "Debug request flow")
 
 	cmd.AddCommand(newAuthCmd(ac), newDSCmd(ac), newFSCmd(ac), newInfoCmd(ac), newCLIConfigCmd(ac), newCLIUpdateCmd(ac), newVersionCmd(ac))
-	return cmd
+	return cmd, ac
 }

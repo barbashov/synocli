@@ -48,7 +48,7 @@ func TestFSSearchClearRequiresTaskID(t *testing.T) {
 
 func TestRootIncludesFSAlias(t *testing.T) {
 	var out, errOut bytes.Buffer
-	cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
+	cmd, _ := newRootCmd(strings.NewReader(""), &out, &errOut)
 	cmd.SetArgs([]string{"filestation", "--help"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)

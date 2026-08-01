@@ -22,7 +22,7 @@ func TestInfoCmdHasUtilizationSubcommand(t *testing.T) {
 }
 
 func TestInfoCmdRegisteredOnRoot(t *testing.T) {
-	root := newRootCmd(nil, &bytes.Buffer{}, &bytes.Buffer{})
+	root, _ := newRootCmd(nil, &bytes.Buffer{}, &bytes.Buffer{})
 	sub, _, err := root.Find([]string{"info"})
 	if err != nil || sub == nil || sub.Name() != "info" {
 		t.Fatalf("root.info not registered: %v", err)

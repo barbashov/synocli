@@ -31,7 +31,9 @@ func (a *appContext) resolveRuntimeOptions(cmd *cobra.Command) (config.GlobalOpt
 	if !cmd.Flags().Lookup("user").Changed && strings.TrimSpace(fileCfg.User) != "" {
 		out.User = fileCfg.User
 	}
-	if !cmd.Flags().Lookup("password").Changed && strings.TrimSpace(fileCfg.Password) != "" {
+	// An explicit --password-stdin outranks the config-file password; merging
+	// the file value here would trip the mutual-exclusion check below.
+	if !cmd.Flags().Lookup("password").Changed && !out.PasswordStdin && strings.TrimSpace(fileCfg.Password) != "" {
 		out.Password = fileCfg.Password
 	}
 	if !cmd.Flags().Lookup("insecure-tls").Changed {

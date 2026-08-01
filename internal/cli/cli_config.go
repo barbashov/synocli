@@ -56,8 +56,21 @@ func newCLIConfigInitCmd(ac *appContext) *cobra.Command {
 			if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 				return ac.outputError(joinCommand("cli-config", "init"), "", start, apperr.Wrap("internal_error", "create config directory", 1, err))
 			}
-			content := buildConfigContent(ac.opts)
-			if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+			// Resolve --credentials-file / --password-stdin so the flags are
+			// honored instead of silently writing an empty password.
+			opts := ac.opts
+			if opts.CredentialsFile != "" || opts.PasswordStdin {
+				if err := opts.ResolvePassword(ac.stdin); err != nil {
+					return ac.outputError(joinCommand("cli-config", "init"), "", start, apperr.Wrap("validation_error", "invalid auth options", 1, err))
+				}
+			}
+			if opts.Endpoint != "" {
+				if _, err := config.ValidateEndpoint(opts.Endpoint); err != nil {
+					return ac.outputError(joinCommand("cli-config", "init"), "", start, apperr.Wrap("validation_error", "invalid endpoint", 1, err))
+				}
+			}
+			content := buildConfigContent(opts)
+			if err := writeFileAtomic0600(configPath, []byte(content)); err != nil {
 				return ac.outputError(joinCommand("cli-config", "init"), "", start, apperr.Wrap("internal_error", "write config file", 1, err))
 			}
 			data := map[string]any{"path": configPath, "created": true}
@@ -146,6 +159,38 @@ func buildConfigContent(cfg config.GlobalOptions) string {
 		_, _ = fmt.Fprintf(&b, "timeout=%s\n", cfg.Timeout)
 	}
 	return b.String()
+}
+
+// writeFileAtomic0600 writes content through a 0600 temp file and renames it
+// into place. os.WriteFile alone would keep the existing (possibly 0644) mode
+// when overwriting, leaving the plaintext password readable by other users.
+func writeFileAtomic0600(path string, content []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".synocli-config-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	success := false
+	defer func() {
+		_ = tmp.Close()
+		if !success {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := tmp.Write(content); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	success = true
+	return nil
 }
 
 func (a *appContext) configPath() (string, error) {

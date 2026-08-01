@@ -6,15 +6,62 @@ The format is based on Keep a Changelog and uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Security
+- Credentials and session tokens no longer leak into error output: transport-level failures (TLS, DNS, timeout, connection refused) previously embedded the full request URL — including `passwd` on login and `_sid` on every API call — in stderr, `--json` error envelopes, and `--debug` logs. URLs in such errors are now redacted everywhere.
+- Cached sessions (`reuse_session`) are now bound to the endpoint and user they were issued for. A cached SID is never sent to a different `--endpoint` and never silently reused for a different `--user`. The session file format changed to JSON; old bare-SID session files are discarded (one extra login after upgrade).
+- `cli-config init --force` over an existing config now always leaves the file at mode 0600 (previously the pre-existing mode, e.g. 0644 with a plaintext password, was kept).
+- `--debug` now redacts namespaced secret fields such as `extract_password` (suffix matching on `password`/`passwd`/`passphrase`/`token`/`secret`).
+- Recursive `fs upload` refuses symlinks and other non-regular files inside the tree instead of silently uploading content from outside the selected directory.
+- Endpoints with embedded credentials (`https://user:pass@host`) are rejected.
+- `--password` on an interactive terminal prints a warning suggesting `--password-stdin` / `--credentials-file`.
+
+### Fixed
+- Windows builds: config, credentials, and session files were always rejected (and the session file deleted) because POSIX permission checks don't apply on Windows; the checks are now Unix-only.
+- Download Station legacy v1 API dialect now actually works: `ds get` uses `getinfo` (v1 has no `get` method), id/additional parameters use comma-separated encoding, `ds add` sends `uri`, and pause/resume/delete parse the v1 array-shaped response. Previously every one of these failed on a NAS without the DownloadStation2 API.
+- API discovery failure is no longer silently swallowed (which degraded every command to default API paths); it now fails with a clear `connection_error`.
+- `fs download --debug` no longer buffers the entire file in memory: the debug transport captures at most 64 KiB of any request/response body and streams the rest untouched.
+- `--json` mode now emits the documented error envelope for validation and usage errors raised before a session is established (previously stdout was empty and the error went to stderr as plain text).
+- A session-expiry re-login no longer re-runs command closures that already performed a server-side mutation (e.g. a second `fs copy` task will not be started if the session expires mid-poll).
+- `fs get` on a nonexistent path now exits with `synology_error` (408) instead of printing it as an existing 0-byte file; per-entry errors in multi-path `fs get` are marked in the table.
+- `info`, `info utilization`, `info disks` errors now map to `synology_error` with `synology_code` details, like ds/fs commands, instead of `internal_error`.
+- `--password-stdin` now works when the config file also contains a password (explicit flag out-ranks config).
+- `cli-config init` now honors `--password-stdin` and `--credentials-file` (previously it silently wrote an empty password) and validates `--endpoint` before writing.
+- `fs upload` server-side errors (e.g. a reverse proxy rejecting the body) are no longer masked by an `io: read/write on closed pipe` error; a local read error mid-upload now aborts the request instead of sending a truncated body as complete.
+- `cli-update` no longer treats unparseable versions as infinitely old: source builds like `v0.4.12-5-gabc1234` compare by their release prefix, and fully unparseable versions (e.g. `dev`) are never auto-clobbered.
+- HTTP transport now honors `HTTPS_PROXY`/`HTTP_PROXY` environment variables and inherits `http.DefaultTransport` dial/TLS-handshake timeouts.
+- `FormatBytes` no longer prints out-of-range values like `1024.0 KB` at unit boundaries.
+- Remote paths with trailing slashes (shell tab-completion) are normalized in `fs get`/`rename`/`delete`/`download`/`copy`/`move`/`upload`/`md5`/`extract`/`compress`/`dir-size`, matching `fs list`/`mkdir`/`search`.
+- Negative `--max-wait` values are rejected instead of silently meaning "unlimited".
+- `fs md5` and `fs extract` now reject extra positional arguments instead of silently ignoring everything after the first.
+
+### Changed
+- `fs list` and `fs tasks` now list everything by default (`--limit` default changed from 1000/100 to 0 = all), per the project no-truncation rule.
+
 ### Agent Notes
 ```yaml
-breaking_changes: []
+breaking_changes:
+  - "Session cache file format changed to JSON bound to endpoint+user; existing sessions are invalidated once (transparent re-login)."
+  - "API discovery failure is now a hard connection_error instead of a silent fallback to default API paths."
+  - "cli-update: unparseable current versions (e.g. dev builds) are no longer offered/applied as updates."
 commands_added: []
-commands_changed: []
+commands_changed:
+  - "fs get: nonexistent paths now fail with synology_error/408 instead of rendering a fake 0 B entry."
+  - "fs md5 / fs extract: exactly one positional argument is now required."
+  - "info / info utilization / info disks: server errors now emit code synology_error with details.synology_code."
 flags_added: []
-flags_changed: []
-behavior_changes: []
-skill_update_action: "No skill update required until this section is released."
+flags_changed:
+  - "fs list --limit: default 1000 -> 0 (all entries)."
+  - "fs tasks --limit: default 100 -> 0 (all tasks)."
+  - "--max-wait (ds wait, fs copy/move/search and task-start commands): negative values rejected."
+behavior_changes:
+  - "--json: validation/usage errors raised before session setup now emit the standard error envelope on stdout."
+  - "Transport-error messages redact URL query strings (passwd/_sid) everywhere, including --debug."
+  - "reuse_session: cached SID is only reused when endpoint and user match; user is adopted from the cached session when not specified (auth whoami now reports it)."
+  - "Session-expiry auto-retry is suppressed after a server-side mutation has been performed."
+  - "Recursive fs upload fails on symlinks/FIFOs/devices inside the tree."
+  - "Remote path arguments are normalized (trailing slashes stripped) across all fs commands."
+  - "HTTPS_PROXY/HTTP_PROXY are now honored."
+skill_update_action: "Update fs list / fs tasks descriptions (default now lists everything); note fs md5/extract take exactly one path; note --json envelope now covers early validation errors."
 ```
 
 ## [0.4.12] - 2026-05-29

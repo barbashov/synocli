@@ -263,6 +263,9 @@ func newDSCleanupCmd(ac *appContext) *cobra.Command {
 						return nil, apperr.New("cancelled", "cleanup cancelled", 1)
 					}
 				}
+				// From here on the closure mutates server state; a session-expiry
+				// retry would re-list and re-prompt, so fail instead.
+				s.markCommitted()
 				if err := s.dsClient.Delete(ctx, ids); err != nil {
 					var apiErr *downloadstation.APIError
 					if errors.As(err, &apiErr) && len(apiErr.FailedTasks) > 0 {
@@ -486,6 +489,9 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
+			if err := validateNonNegativeDuration("--max-wait", maxWait); err != nil {
+				return err
+			}
 			id := args[0]
 			return ac.withSession(cmd, joinCommand("ds", "wait"), func(ctx context.Context, s *session) (any, error) {
 				deadline := time.Time{}
@@ -534,6 +540,15 @@ func newDSWaitCmd(ac *appContext) *cobra.Command {
 func validatePositiveDuration(flagName string, value time.Duration) error {
 	if value <= 0 {
 		return apperr.New("validation_error", fmt.Sprintf("%s must be greater than 0", flagName), 1)
+	}
+	return nil
+}
+
+// validateNonNegativeDuration guards flags where 0 means "unlimited" but a
+// negative value is a typo that would otherwise silently mean unlimited too.
+func validateNonNegativeDuration(flagName string, value time.Duration) error {
+	if value < 0 {
+		return apperr.New("validation_error", fmt.Sprintf("%s must be >= 0 (0 means unlimited)", flagName), 1)
 	}
 	return nil
 }

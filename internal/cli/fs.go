@@ -78,6 +78,16 @@ func cleanFolderPath(p string) string {
 	return path.Clean(p)
 }
 
+// cleanFolderPaths normalizes every remote path in args (trailing slashes
+// from shell tab-completion would otherwise fail with error 418).
+func cleanFolderPaths(args []string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = cleanFolderPath(a)
+	}
+	return out
+}
+
 func capitalizeWord(s string) string {
 	if s == "" {
 		return s

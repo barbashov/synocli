@@ -161,7 +161,7 @@ func newFSListCmd(ac *appContext) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&offset, "offset", 0, "Offset")
-	cmd.Flags().IntVar(&limit, "limit", 1000, "Limit")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Limit (0 means all)")
 	cmd.Flags().StringVar(&sortBy, "sort-by", "", "Sort by")
 	cmd.Flags().StringVar(&sortDirection, "sort-direction", "", "Sort direction asc/desc")
 	cmd.Flags().StringVar(&pattern, "pattern", "", "Name pattern")
@@ -181,7 +181,7 @@ func newFSGetCmd(ac *appContext) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ac.withSession(cmd, joinCommand("fs", "get"), func(ctx context.Context, s *session) (any, error) {
-				pathsJSON, err := filestation.EncodeJSON(args)
+				pathsJSON, err := filestation.EncodeJSON(cleanFolderPaths(args))
 				if err != nil {
 					return nil, err
 				}
@@ -197,12 +197,30 @@ func newFSGetCmd(ac *appContext) *cobra.Command {
 				if err := s.fsClient.Call(ctx, filestation.APIList, "getinfo", params, &out); err != nil {
 					return nil, err
 				}
+				// getinfo can report success with per-entry error codes (e.g.
+				// 408 for a missing path) instead of a top-level error.
+				files := filestation.MapSliceAny(out["files"])
+				failedAll := len(files) > 0
+				for _, f := range files {
+					if fsFileErrorCode(f) == 0 {
+						failedAll = false
+						break
+					}
+				}
+				if failedAll {
+					first := files[0]
+					return nil, &filestation.APIError{Code: fsFileErrorCode(first), Path: filestation.ValueFromMap(first, "path")}
+				}
 				if ac.opts.JSON {
 					return out, nil
 				}
-				files := filestation.MapSliceAny(out["files"])
 				rows := make([][]string, 0, len(files))
 				for _, f := range files {
+					if code := fsFileErrorCode(f); code != 0 {
+						errMsg := fmt.Sprintf("<error %d: %s>", code, filestation.ErrorMessage(code))
+						rows = append(rows, []string{filestation.ValueFromMap(f, "path"), filestation.ValueFromMap(f, "name"), errMsg, "-"})
+						continue
+					}
 					size := fsListSizeDisplay(f)
 					rows = append(rows, []string{filestation.ValueFromMap(f, "path"), filestation.ValueFromMap(f, "name"), filestation.ValueFromMap(f, "isdir"), size})
 				}
@@ -251,7 +269,7 @@ func newFSRenameCmd(ac *appContext) *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ac.withSession(cmd, joinCommand("fs", "rename"), func(ctx context.Context, s *session) (any, error) {
-				pathsJSON, err := filestation.EncodeJSON([]string{args[0]})
+				pathsJSON, err := filestation.EncodeJSON([]string{cleanFolderPath(args[0])})
 				if err != nil {
 					return nil, err
 				}
@@ -301,11 +319,15 @@ func newFSCopyCmd(ac *appContext, move bool) *cobra.Command {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
+			if err := validateNonNegativeDuration("--max-wait", maxWait); err != nil {
+				return err
+			}
+			dest := cleanFolderPath(dest)
 			return ac.withSession(cmd, joinCommand("fs", verb), func(ctx context.Context, s *session) (any, error) {
 				if err := s.fsClient.EnsureDir(ctx, dest); err != nil {
 					return nil, err
 				}
-				pathsJSON, err := filestation.EncodeJSON(args)
+				pathsJSON, err := filestation.EncodeJSON(cleanFolderPaths(args))
 				if err != nil {
 					return nil, err
 				}
@@ -320,6 +342,7 @@ func newFSCopyCmd(ac *appContext, move bool) *cobra.Command {
 				if err := s.fsClient.Call(ctx, filestation.APICopyMove, "start", params, &out); err != nil {
 					return nil, err
 				}
+				s.markCommitted()
 				taskID := filestation.FirstTaskID(out)
 				if taskID == "" {
 					return nil, apperr.New("internal_error", "copy/move task id missing", 1)
@@ -364,6 +387,7 @@ func newFSDeleteCmd(ac *appContext) *cobra.Command {
 		Short:   "Delete files/folders",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			args = cleanFolderPaths(args)
 			return ac.withSession(cmd, joinCommand("fs", "delete"), func(ctx context.Context, s *session) (any, error) {
 				if err := s.fsClient.EnsureDeleteSafety(ctx, args, recursive); err != nil {
 					return nil, err
@@ -423,6 +447,7 @@ func newFSUploadCmd(ac *appContext) *cobra.Command {
 			if overwrite && skipExisting {
 				return apperr.New("validation_error", "use only one of --overwrite or --skip-existing", 1)
 			}
+			args[1] = cleanFolderPath(args[1])
 			return ac.withSession(cmd, joinCommand("fs", "upload"), func(ctx context.Context, s *session) (any, error) {
 				st, err := os.Stat(args[0])
 				if err != nil {
@@ -469,7 +494,7 @@ func newFSDownloadCmd(ac *appContext) *cobra.Command {
 				return apperr.New("validation_error", "--output is required", 1)
 			}
 			return ac.withSession(cmd, joinCommand("fs", "download"), func(ctx context.Context, s *session) (any, error) {
-				pathsJSON, err := filestation.EncodeJSON(args)
+				pathsJSON, err := filestation.EncodeJSON(cleanFolderPaths(args))
 				if err != nil {
 					return nil, err
 				}
@@ -529,6 +554,15 @@ func fsListMTimeDisplay(file map[string]any) string {
 		return t.Format("Jan _2 15:04")
 	}
 	return t.Format("Jan _2  2006")
+}
+
+// fsFileErrorCode extracts the per-entry error code getinfo attaches to
+// entries it could not resolve (0 when the entry is valid).
+func fsFileErrorCode(file map[string]any) int {
+	if n, ok := filestation.Int64FromAny(file["code"]); ok {
+		return int(n)
+	}
+	return 0
 }
 
 func fsFileIsDir(file map[string]any) bool {

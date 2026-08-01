@@ -48,7 +48,9 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 
 	entries, err := apiinfo.Discover(ctx, u.String(), hc)
 	if err != nil {
-		entries = map[string]apiinfo.Entry{}
+		// A silent fallback here would degrade every command to default API
+		// paths/versions; surface the connectivity problem instead.
+		return a.outputError(commandName, u.String(), start, apperr.Wrap("connection_error", "discover DSM APIs", 1, err))
 	}
 	authPath, authVersion := apiinfo.Select(entries, "SYNO.API.Auth", "/webapi/auth.cgi", 6)
 	authVersion = clampVersion(authVersion, 6)
@@ -99,7 +101,8 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 			return "", a.outputError(commandName, u.String(), start, apperr.Wrap("auth_failed", "authentication failed", 2, loginErr))
 		}
 		if runOpts.ReuseSession {
-			if writeErr := config.WriteSession(sessionPath, newSID); writeErr != nil {
+			newSession := config.Session{SID: newSID, Endpoint: u.String(), User: runOpts.User}
+			if writeErr := config.WriteSession(sessionPath, newSession); writeErr != nil {
 				if runOpts.Debug {
 					_, _ = fmt.Fprintf(a.err, "[debug] write session: %v\n", writeErr)
 				}
@@ -120,8 +123,20 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 			if runOpts.Debug {
 				_, _ = fmt.Fprintf(a.err, "[debug] load session: %v\n", loadErr)
 			}
-		} else {
-			sid = cached
+		} else if cached.SID != "" {
+			switch {
+			case cached.Endpoint != u.String():
+				// The cached SID was issued by a different endpoint; never
+				// send its token elsewhere.
+			case runOpts.User != "" && cached.User != "" && cached.User != runOpts.User:
+				// A different user was requested explicitly; force a fresh
+				// login instead of silently acting as the cached identity.
+			default:
+				sid = cached.SID
+				if runOpts.User == "" {
+					runOpts.User = cached.User
+				}
+			}
 		}
 	}
 
@@ -134,6 +149,7 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 	}
 	a.opts = runOpts
 
+	var lastSess *session
 	runWithSID := func(id string) (any, error) {
 		dsClient, err := downloadstation.NewClient(u.String(), id, hc, dsPath, dsVersion, dsAPIName)
 		if err != nil {
@@ -151,7 +167,7 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 		if err != nil {
 			return nil, apperr.Wrap("internal_error", "initialize storage client", 1, err)
 		}
-		return fn(ctx, &session{
+		lastSess = &session{
 			endpoint:      u.String(),
 			start:         start,
 			authClient:    authClient,
@@ -160,12 +176,16 @@ func (a *appContext) withSession(cmd *cobra.Command, commandName string, fn func
 			sysClient:     sysClient,
 			storageClient: storageClient,
 			apiVersions:   apiVersions,
-		})
+		}
+		return fn(ctx, lastSess)
 	}
 
 	data, fnErr := runWithSID(sid)
 
-	if fnErr != nil && runOpts.ReuseSession && isSessionExpiry(fnErr) {
+	// Re-login and retry only when the closure has not yet performed a
+	// server-side mutation; otherwise a retry would duplicate it (e.g. start a
+	// second copy task whose first incarnation is still running).
+	if fnErr != nil && runOpts.ReuseSession && isSessionExpiry(fnErr) && (lastSess == nil || !lastSess.committed) {
 		_ = config.DeleteSession(sessionPath)
 		newSID, err := loginAndSave()
 		if err != nil {

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"synocli/internal/redact"
 )
 
 func (c *Client) doGET(ctx context.Context, vals url.Values, out any) error {
@@ -25,7 +27,7 @@ func (c *Client) doGETAction(ctx context.Context, vals url.Values) error {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return fmt.Errorf("request failed: %w", redact.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	return decodeAction(resp.Body)
@@ -42,7 +44,7 @@ func (c *Client) doGETCreateToPath(ctx context.Context, path string, vals url.Va
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("request failed: %w", err)
+		return nil, nil, fmt.Errorf("request failed: %w", redact.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	return decodeCreate(resp.Body)
@@ -59,7 +61,7 @@ func (c *Client) doGETToPath(ctx context.Context, path string, vals url.Values, 
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return fmt.Errorf("request failed: %w", redact.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if out == nil {
@@ -104,9 +106,7 @@ func decodeBase(r io.Reader) error {
 func decodeAction(r io.Reader) error {
 	var out struct {
 		baseResponse
-		Data struct {
-			FailedTask []FailedTask `json:"failed_task"`
-		} `json:"data"`
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.NewDecoder(r).Decode(&out); err != nil {
 		return fmt.Errorf("decode action response: %w", err)
@@ -114,8 +114,12 @@ func decodeAction(r io.Reader) error {
 	if !out.Success {
 		return apiErrorFromBase(out.baseResponse)
 	}
-	failed := make([]FailedTask, 0, len(out.Data.FailedTask))
-	for _, ft := range out.Data.FailedTask {
+	results, err := decodeActionData(out.Data)
+	if err != nil {
+		return err
+	}
+	failed := make([]FailedTask, 0, len(results))
+	for _, ft := range results {
 		if ft.Code != 0 {
 			failed = append(failed, ft)
 		}
@@ -127,6 +131,30 @@ func decodeAction(r io.Reader) error {
 		}
 	}
 	return nil
+}
+
+// decodeActionData parses the data payload of a pause/resume/delete response.
+// DS2 returns {"failed_task": [...]}, the legacy v1 API returns a bare array
+// of {"id": ..., "error": ...} objects.
+func decodeActionData(data json.RawMessage) ([]FailedTask, error) {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" || trimmed == "null" {
+		return nil, nil
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		var results []FailedTask
+		if err := json.Unmarshal(data, &results); err != nil {
+			return nil, fmt.Errorf("decode action response: %w", err)
+		}
+		return results, nil
+	}
+	var obj struct {
+		FailedTask []FailedTask `json:"failed_task"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, fmt.Errorf("decode action response: %w", err)
+	}
+	return obj.FailedTask, nil
 }
 
 func decodeCreate(r io.Reader) ([]string, []string, error) {

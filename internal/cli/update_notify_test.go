@@ -35,7 +35,7 @@ func TestBackgroundUpdateCheckSkipByFlag(t *testing.T) {
 		}
 		defer func() { buildUpdateClient = prev }()
 
-		cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
+		cmd, _ := newRootCmd(strings.NewReader(""), &out, &errOut)
 		cmd.SetArgs([]string{"--no-update-check", "version"})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute: %v", err)
@@ -56,7 +56,7 @@ func TestBackgroundUpdateCheckSkipByJSON(t *testing.T) {
 		}
 		defer func() { buildUpdateClient = prev }()
 
-		cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
+		cmd, _ := newRootCmd(strings.NewReader(""), &out, &errOut)
 		cmd.SetArgs([]string{"--json", "version"})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute: %v", err)

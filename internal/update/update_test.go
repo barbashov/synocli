@@ -60,8 +60,11 @@ func TestIsNewerVersion(t *testing.T) {
 		{name: "newer patch", latest: "v1.2.4", current: "v1.2.3", want: true},
 		{name: "equal", latest: "v1.2.3", current: "v1.2.3", want: false},
 		{name: "older", latest: "v1.2.2", current: "v1.2.3", want: false},
-		{name: "current dev", latest: "v1.2.3", current: "dev", want: true},
+		{name: "current dev not clobbered", latest: "v1.2.3", current: "dev", want: false},
 		{name: "invalid latest", latest: "latest", current: "v1.2.3", want: false},
+		{name: "git-describe suffix equal", latest: "v1.2.3", current: "v1.2.3-5-gabc1234", want: false},
+		{name: "git-describe suffix older", latest: "v1.2.4", current: "v1.2.3-5-gabc1234", want: true},
+		{name: "prerelease suffix", latest: "v1.2.3", current: "v1.2.3-rc1", want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

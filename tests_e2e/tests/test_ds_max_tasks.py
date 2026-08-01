@@ -45,11 +45,19 @@ def test_max_tasks_set_above_limit_rejected(cli: SynoCLI) -> None:
 
 
 def test_max_tasks_set_zero_rejected(cli: SynoCLI) -> None:
-    # Fails before withSession — no envelope; assert on exit code + stderr.
-    result = cli.run_expect_failure("ds", "max-tasks", "set", "0", exit_code=1)
-    assert ">= 1" in result.stderr, f"unexpected stderr: {result.stderr!r}"
+    # Early validation (before withSession) still emits the JSON envelope.
+    result = cli.run_expect_failure(
+        "ds", "max-tasks", "set", "0", exit_code=1, code="validation_error"
+    )
+    env = result.envelope_or_raise()
+    assert ">= 1" in env["error"]["message"], f"unexpected error: {env['error']!r}"
 
 
 def test_max_tasks_set_non_integer_rejected(cli: SynoCLI) -> None:
-    result = cli.run_expect_failure("ds", "max-tasks", "set", "abc", exit_code=1)
-    assert "integer" in result.stderr.lower(), f"unexpected stderr: {result.stderr!r}"
+    result = cli.run_expect_failure(
+        "ds", "max-tasks", "set", "abc", exit_code=1, code="validation_error"
+    )
+    env = result.envelope_or_raise()
+    assert "integer" in env["error"]["message"].lower(), (
+        f"unexpected error: {env['error']!r}"
+    )

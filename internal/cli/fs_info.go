@@ -14,8 +14,8 @@ import (
 )
 
 func newFSDirSizeCmd(ac *appContext) *cobra.Command {
-	cmd := newTaskStartCmd(ac, filestation.APIDirSize, "dir-size", "Calculate directory size", "start", func(args []string) (map[string]string, error) {
-		j, err := filestation.EncodeJSON(args)
+	cmd := newTaskStartCmd(ac, filestation.APIDirSize, "dir-size", "Calculate directory size", "start", cobra.MinimumNArgs(1), func(args []string) (map[string]string, error) {
+		j, err := filestation.EncodeJSON(cleanFolderPaths(args))
 		if err != nil {
 			return nil, err
 		}
@@ -29,8 +29,8 @@ func newFSDirSizeCmd(ac *appContext) *cobra.Command {
 }
 
 func newFSMD5Cmd(ac *appContext) *cobra.Command {
-	cmd := newTaskStartCmd(ac, filestation.APIMD5, "md5", "Calculate MD5 checksum", "start", func(args []string) (map[string]string, error) {
-		return map[string]string{"file_path": args[0]}, nil
+	cmd := newTaskStartCmd(ac, filestation.APIMD5, "md5", "Calculate MD5 checksum", "start", cobra.ExactArgs(1), func(args []string) (map[string]string, error) {
+		return map[string]string{"file_path": cleanFolderPath(args[0])}, nil
 	})
 	cmd.AddCommand(
 		newTaskStatusCmd(ac, filestation.APIMD5, "md5", "Check MD5 status"),
@@ -57,6 +57,9 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
 				return err
 			}
+			if err := validateNonNegativeDuration("--max-wait", maxWait); err != nil {
+				return err
+			}
 			return ac.withSession(cmd, joinCommand("fs", "search"), func(ctx context.Context, s *session) (any, error) {
 				params := makeValues("folder_path", cleanFolderPath(args[0]), "pattern", pattern, "recursive", fmt.Sprintf("%t", recursive))
 				if filetype != "" {
@@ -66,6 +69,7 @@ func newFSSearchCmd(ac *appContext) *cobra.Command {
 				if err := s.fsClient.Call(ctx, filestation.APISearch, "start", params, &out); err != nil {
 					return nil, err
 				}
+				s.markCommitted()
 				taskID := filestation.FirstTaskID(out)
 				if taskID == "" {
 					return nil, apperr.New("internal_error", "search task id missing", 1)

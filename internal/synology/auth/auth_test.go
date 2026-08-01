@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -58,5 +59,40 @@ func TestLoginFailure(t *testing.T) {
 	}
 	if _, parseErr := url.Parse(ts.URL); parseErr != nil {
 		t.Fatalf("unexpected parse error: %v", parseErr)
+	}
+}
+
+func TestLoginTransportErrorDoesNotLeakPassword(t *testing.T) {
+	// Point at a closed listener so http.Client.Do fails with a *url.Error
+	// whose URL carries account/passwd query parameters.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	endpoint := ts.URL
+	ts.Close()
+
+	c := &Client{Endpoint: endpoint, Path: "/webapi/auth.cgi", Version: 6, HTTP: &http.Client{}}
+	_, err := c.Login(context.Background(), "admin", "hunter2secret", "synocli")
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if strings.Contains(err.Error(), "hunter2secret") {
+		t.Fatalf("login error leaked password: %v", err)
+	}
+	if strings.Contains(err.Error(), "account=admin") {
+		t.Fatalf("login error leaked account: %v", err)
+	}
+}
+
+func TestLogoutTransportErrorDoesNotLeakSID(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	endpoint := ts.URL
+	ts.Close()
+
+	c := &Client{Endpoint: endpoint, Path: "/webapi/auth.cgi", Version: 6, HTTP: &http.Client{}}
+	err := c.Logout(context.Background(), "topsecretsid", "synocli")
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if strings.Contains(err.Error(), "topsecretsid") {
+		t.Fatalf("logout error leaked sid: %v", err)
 	}
 }

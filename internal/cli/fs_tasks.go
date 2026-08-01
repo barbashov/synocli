@@ -14,16 +14,19 @@ import (
 	"synocli/internal/synology/filestation"
 )
 
-func newTaskStartCmd(ac *appContext, apiKey, cmdName, title, method string, paramsFn func(args []string) (map[string]string, error)) *cobra.Command {
+func newTaskStartCmd(ac *appContext, apiKey, cmdName, title, method string, argsSpec cobra.PositionalArgs, paramsFn func(args []string) (map[string]string, error)) *cobra.Command {
 	var async bool
 	var interval time.Duration
 	var maxWait time.Duration
 	cmd := &cobra.Command{
 		Use:   fmt.Sprintf("%s <path>", cmdName),
 		Short: title,
-		Args:  cobra.MinimumNArgs(1),
+		Args:  argsSpec,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validatePositiveDuration("--interval", interval); err != nil {
+				return err
+			}
+			if err := validateNonNegativeDuration("--max-wait", maxWait); err != nil {
 				return err
 			}
 			return ac.withSession(cmd, joinCommand("fs", cmdName), func(ctx context.Context, s *session) (any, error) {
@@ -36,6 +39,7 @@ func newTaskStartCmd(ac *appContext, apiKey, cmdName, title, method string, para
 				if err := s.fsClient.Call(ctx, apiKey, method, params, &out); err != nil {
 					return nil, err
 				}
+				s.markCommitted()
 				taskID := filestation.FirstTaskID(out)
 				if taskID == "" {
 					return nil, apperr.New("internal_error", "task id missing", 1)
@@ -173,7 +177,7 @@ func newFSTasksCmd(ac *appContext) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&offset, "offset", 0, "Offset")
-	cmd.Flags().IntVar(&limit, "limit", 100, "Limit")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Limit (0 means all)")
 	cmd.Flags().StringVar(&sortBy, "sort-by", "", "Sort by")
 	cmd.Flags().StringVar(&sortDirection, "sort-direction", "", "Sort direction")
 	cmd.Flags().BoolVar(&watch, "watch", false, "Continuous polling mode")

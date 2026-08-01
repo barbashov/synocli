@@ -30,7 +30,8 @@ func New(opts Options) (*http.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create cookie jar: %w", err)
 	}
-	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: opts.InsecureTLS}}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: opts.InsecureTLS}
 	var rt http.RoundTripper = tr
 	if opts.Debug {
 		if opts.DebugOut == nil {
@@ -76,7 +77,7 @@ func (d *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	resp, err := d.next.RoundTrip(req)
 	dur := time.Since(start)
 	if err != nil {
-		_, _ = fmt.Fprintf(d.out, "[debug] <- error after %s: %v\n", dur, err)
+		_, _ = fmt.Fprintf(d.out, "[debug] <- error after %s: %v\n", dur, redact.Error(err))
 		return nil, err
 	}
 	_, _ = fmt.Fprintf(d.out, "[debug] <- status=%s after %s\n", resp.Status, dur)
@@ -92,6 +93,11 @@ func (d *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	return resp, nil
 }
 
+// maxBodyCapture bounds how much of a request/response body the debug
+// transport buffers; anything larger streams through untouched so multi-GB
+// transfers are not held in memory.
+const maxBodyCapture = 64 * 1024
+
 func (d *debugRoundTripper) logRequestBody(req *http.Request) {
 	if req.Body == nil {
 		return
@@ -100,9 +106,13 @@ func (d *debugRoundTripper) logRequestBody(req *http.Request) {
 		_, _ = fmt.Fprintln(d.out, "[debug]   body=<stream unavailable>")
 		return
 	}
-	body, err := cloneBody(req.GetBody)
+	body, truncated, err := cloneBody(req.GetBody)
 	if err != nil {
 		_, _ = fmt.Fprintf(d.out, "[debug]   body=<read error: %v>\n", err)
+		return
+	}
+	if truncated {
+		_, _ = fmt.Fprintf(d.out, "[debug]   body=<omitted: larger than %d bytes>\n", maxBodyCapture)
 		return
 	}
 	d.logBody("request", req.Header.Get("Content-Type"), body)
@@ -112,15 +122,30 @@ func (d *debugRoundTripper) logResponseBody(resp *http.Response) {
 	if resp.Body == nil {
 		return
 	}
-	body, err := io.ReadAll(resp.Body)
+	head, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyCapture+1))
 	if err != nil {
 		_, _ = fmt.Fprintf(d.out, "[debug]   response_body=<read error: %v>\n", err)
+		resp.Body = readCloser{io.MultiReader(bytes.NewReader(head), errReader{err}), resp.Body}
+		return
+	}
+	if len(head) > maxBodyCapture {
+		_, _ = fmt.Fprintf(d.out, "[debug]   response_body=<omitted: larger than %d bytes>\n", maxBodyCapture)
+		resp.Body = readCloser{io.MultiReader(bytes.NewReader(head), resp.Body), resp.Body}
 		return
 	}
 	_ = resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(body))
-	d.logBody("response", resp.Header.Get("Content-Type"), body)
+	resp.Body = io.NopCloser(bytes.NewReader(head))
+	d.logBody("response", resp.Header.Get("Content-Type"), head)
 }
+
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
 
 func (d *debugRoundTripper) logBody(kind, contentType string, body []byte) {
 	_, _ = fmt.Fprintf(d.out, "[debug]   %s_body_bytes=%d\n", kind, len(body))
@@ -136,13 +161,20 @@ func (d *debugRoundTripper) logBody(kind, contentType string, body []byte) {
 	}
 }
 
-func cloneBody(getBody func() (io.ReadCloser, error)) ([]byte, error) {
+func cloneBody(getBody func() (io.ReadCloser, error)) (body []byte, truncated bool, err error) {
 	rc, err := getBody()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer func() { _ = rc.Close() }()
-	return io.ReadAll(rc)
+	body, err = io.ReadAll(io.LimitReader(rc, maxBodyCapture+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(body) > maxBodyCapture {
+		return nil, true, nil
+	}
+	return body, false, nil
 }
 
 func summarizeBody(contentType string, body []byte) string {

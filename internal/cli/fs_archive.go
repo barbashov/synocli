@@ -15,10 +15,10 @@ func newFSExtractCmd(ac *appContext) *cobra.Command {
 	var keepDir bool
 	var createSubfolder bool
 	var password string
-	cmd := newTaskStartCmd(ac, filestation.APIExtract, "extract", "Extract archive", "start", func(args []string) (map[string]string, error) {
+	cmd := newTaskStartCmd(ac, filestation.APIExtract, "extract", "Extract archive", "start", cobra.ExactArgs(1), func(args []string) (map[string]string, error) {
 		return map[string]string{
-			"file_path":        args[0],
-			"dest_folder_path": dest,
+			"file_path":        cleanFolderPath(args[0]),
+			"dest_folder_path": cleanFolderPath(dest),
 			"overwrite":        fmt.Sprintf("%t", overwrite),
 			"keep_dir":         fmt.Sprintf("%t", keepDir),
 			"create_subfolder": fmt.Sprintf("%t", createSubfolder),
@@ -50,14 +50,14 @@ func newFSCompressCmd(ac *appContext) *cobra.Command {
 	var level int
 	var mode string
 	var password string
-	cmd := newTaskStartCmd(ac, filestation.APICompress, "compress", "Compress files", "start", func(args []string) (map[string]string, error) {
-		j, err := filestation.EncodeJSON(args)
+	cmd := newTaskStartCmd(ac, filestation.APICompress, "compress", "Compress files", "start", cobra.MinimumNArgs(1), func(args []string) (map[string]string, error) {
+		j, err := filestation.EncodeJSON(cleanFolderPaths(args))
 		if err != nil {
 			return nil, err
 		}
 		return map[string]string{
 			"path":           j,
-			"dest_file_path": dest,
+			"dest_file_path": cleanFolderPath(dest),
 			"format":         format,
 			"level":          fmt.Sprintf("%d", level),
 			"mode":           mode,

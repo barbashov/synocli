@@ -82,3 +82,13 @@ func TestFormatDurationWords(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatBytesUnitBoundaryRollsOver(t *testing.T) {
+	// 1048570/1024 = 1023.994... would print "1024.0 KB" without rollover.
+	if got := FormatBytes(1048570); got != "1.0 MB" {
+		t.Fatalf("FormatBytes(1048570) = %q, want 1.0 MB", got)
+	}
+	if got := FormatBytes(1500); got != "1.5 KB" {
+		t.Fatalf("FormatBytes(1500) = %q, want 1.5 KB", got)
+	}
+}

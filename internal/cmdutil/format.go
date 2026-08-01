@@ -15,7 +15,9 @@ func FormatBytes(b int64) string {
 	v := float64(b)
 	last := len(units) - 1
 	for i, u := range units {
-		if v < 1024 || i == last {
+		// 1023.95 rounds to "1024.0" under %.1f, so roll such values over to
+		// the next unit instead of printing an out-of-range "1024.0 KB".
+		if v < 1023.95 || i == last {
 			if u == "B" {
 				return fmt.Sprintf("%d B", b)
 			}

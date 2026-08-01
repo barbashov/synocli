@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+
+	"synocli/internal/redact"
 )
 
 type Client struct {
@@ -50,7 +52,7 @@ func (c *Client) Login(ctx context.Context, user, password, session string) (str
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("login request failed: %w", err)
+		return "", fmt.Errorf("login request failed: %w", redact.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var out loginResponse
@@ -86,7 +88,7 @@ func (c *Client) Logout(ctx context.Context, sid, session string) error {
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return err
+		return redact.Error(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var out struct {

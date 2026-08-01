@@ -29,6 +29,14 @@ type session struct {
 	sysClient     *system.Client
 	storageClient *storage.Client
 	apiVersions   map[string]int
+	committed     bool
+}
+
+// markCommitted records that the command closure has performed a server-side
+// mutation. After this point withSession will not re-run the closure on a
+// session-expiry re-login, so non-idempotent work is never duplicated.
+func (s *session) markCommitted() {
+	s.committed = true
 }
 
 type jsonOutputHandledError struct {

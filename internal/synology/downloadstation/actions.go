@@ -31,7 +31,7 @@ func (c *Client) doAction(ctx context.Context, method string, ids []string) erro
 }
 
 func (c *Client) actionIDsArg(ids []string) (string, error) {
-	if strings.HasPrefix(c.taskAPIName(), "SYNO.DownloadStation2.") {
+	if c.isDS2() {
 		b, err := json.Marshal(ids)
 		if err != nil {
 			return "", fmt.Errorf("encode ids: %w", err)

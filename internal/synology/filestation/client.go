@@ -3,6 +3,7 @@ package filestation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -12,6 +13,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"synocli/internal/redact"
 )
 
 type APISpec struct {
@@ -203,7 +206,7 @@ func (c *Client) Call(ctx context.Context, apiKey, method string, params url.Val
 	req.AddCookie(&http.Cookie{Name: "id", Value: c.sid})
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return fmt.Errorf("request failed: %w", redact.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	return decodeJSON(resp.Body, out)
@@ -225,36 +228,40 @@ func (c *Client) Upload(ctx context.Context, params map[string]string, localPath
 	mw := multipart.NewWriter(pw)
 	errCh := make(chan error, 1)
 	go func() {
-		defer func() { _ = pw.Close() }()
 		defer close(errCh)
-		if err := mw.WriteField("api", api.Name); err != nil {
-			errCh <- err
-			return
-		}
-		if err := mw.WriteField("version", strconv.Itoa(api.Version)); err != nil {
-			errCh <- err
-			return
-		}
-		if err := mw.WriteField("method", "upload"); err != nil {
-			errCh <- err
-			return
-		}
-		for k, v := range params {
-			if err := mw.WriteField(k, v); err != nil {
-				errCh <- err
-				return
+		writeBody := func() error {
+			if err := mw.WriteField("api", api.Name); err != nil {
+				return err
 			}
+			if err := mw.WriteField("version", strconv.Itoa(api.Version)); err != nil {
+				return err
+			}
+			if err := mw.WriteField("method", "upload"); err != nil {
+				return err
+			}
+			for k, v := range params {
+				if err := mw.WriteField(k, v); err != nil {
+					return err
+				}
+			}
+			part, err := mw.CreateFormFile("file", filepath.Base(localPath))
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(part, f); err != nil {
+				return err
+			}
+			return mw.Close()
 		}
-		part, err := mw.CreateFormFile("file", filepath.Base(localPath))
+		err := writeBody()
 		if err != nil {
-			errCh <- err
-			return
+			// Signal an abnormal end of body so the transport does not send a
+			// truncated multipart payload as if it were complete.
+			_ = pw.CloseWithError(err)
+		} else {
+			_ = pw.Close()
 		}
-		if _, err := io.Copy(part, f); err != nil {
-			errCh <- err
-			return
-		}
-		errCh <- mw.Close()
+		errCh <- err
 	}()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, pr)
@@ -266,16 +273,26 @@ func (c *Client) Upload(ctx context.Context, params map[string]string, localPath
 	resp, err := c.transferClient().Do(req)
 	if err != nil {
 		_ = pr.CloseWithError(err)
-		<-errCh
-		return nil, fmt.Errorf("upload request failed: %w", err)
+		writeErr := <-errCh
+		if writeErr != nil && !errors.Is(writeErr, io.ErrClosedPipe) {
+			return nil, fmt.Errorf("upload failed: %w", writeErr)
+		}
+		return nil, fmt.Errorf("upload request failed: %w", redact.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if err := <-errCh; err != nil {
-		return nil, err
-	}
+	// If the server responded before consuming the whole body (auth error,
+	// proxy limit, ...), the writer goroutine fails with a closed-pipe error;
+	// the response holds the real cause, so decode it instead.
+	writeErr := <-errCh
 	var out map[string]any
 	if err := decodeJSON(resp.Body, &out); err != nil {
+		if resp.StatusCode >= 400 {
+			return nil, fmt.Errorf("upload failed: server returned %s", resp.Status)
+		}
 		return nil, err
+	}
+	if writeErr != nil && !errors.Is(writeErr, io.ErrClosedPipe) {
+		return nil, writeErr
 	}
 	return out, nil
 }
@@ -300,7 +317,7 @@ func (c *Client) Download(ctx context.Context, params url.Values) (*http.Respons
 	req.AddCookie(&http.Cookie{Name: "id", Value: c.sid})
 	resp, err := c.transferClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("download request failed: %w", err)
+		return nil, fmt.Errorf("download request failed: %w", redact.Error(err))
 	}
 	return resp, nil
 }

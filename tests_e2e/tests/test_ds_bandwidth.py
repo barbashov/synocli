@@ -40,18 +40,23 @@ def test_bandwidth_set_then_restore(cli: SynoCLI, bandwidth_snapshot) -> None:
 
 
 def test_bandwidth_set_rejects_no_flag(cli: SynoCLI) -> None:
-    # This validation fires in RunE before withSession is reached, so the CLI
-    # prints a plain stderr error rather than a JSON envelope. Assert on stderr.
-    result = cli.run_expect_failure("ds", "bandwidth", "set", exit_code=1)
-    assert "bt-max-download" in result.stderr or "bt-max-upload" in result.stderr, (
-        f"unexpected stderr for missing-flag case: {result.stderr!r}"
+    # Early validation (before withSession) still emits the JSON envelope.
+    result = cli.run_expect_failure(
+        "ds", "bandwidth", "set", exit_code=1, code="validation_error"
+    )
+    env = result.envelope_or_raise()
+    message = env["error"]["message"]
+    assert "bt-max-download" in message or "bt-max-upload" in message, (
+        f"unexpected error for missing-flag case: {env['error']!r}"
     )
 
 
 def test_bandwidth_set_rejects_negative(cli: SynoCLI) -> None:
     result = cli.run_expect_failure(
-        "ds", "bandwidth", "set", "--bt-max-download", "-1", exit_code=1
+        "ds", "bandwidth", "set", "--bt-max-download", "-1",
+        exit_code=1, code="validation_error",
     )
-    assert ">= 0" in result.stderr or "validation" in result.stderr.lower(), (
-        f"unexpected stderr for negative-value case: {result.stderr!r}"
+    env = result.envelope_or_raise()
+    assert ">= 0" in env["error"]["message"], (
+        f"unexpected error for negative-value case: {env['error']!r}"
     )

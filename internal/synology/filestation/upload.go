@@ -3,7 +3,6 @@ package filestation
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -11,7 +10,7 @@ import (
 	"synocli/internal/apperr"
 )
 
-// UploadOne uploads a single local file to remotePath.
+// UploadOne uploads a single local file into the remote directory remotePath.
 func (c *Client) UploadOne(ctx context.Context, localPath, remotePath string, parents, overwrite, skipExisting bool) (map[string]any, error) {
 	params, err := c.buildUploadParams(ctx, remotePath, parents, overwrite, skipExisting)
 	if err != nil {
@@ -60,6 +59,11 @@ func (c *Client) UploadRecursiveCP(ctx context.Context, localDir, remotePath str
 		if d.IsDir() {
 			return c.EnsureDir(ctx, remoteCurrent)
 		}
+		// Symlinks would upload content from outside the selected tree, and
+		// FIFOs/devices can block an untimed transfer indefinitely.
+		if !d.Type().IsRegular() {
+			return apperr.New("validation_error", fmt.Sprintf("refusing to upload non-regular file %s (symlinks and special files are not supported)", p), 1)
+		}
 		parent := path.Dir(remoteCurrent)
 		if skipExisting {
 			ex, _, err := c.Exists(ctx, remoteCurrent)
@@ -75,22 +79,8 @@ func (c *Client) UploadRecursiveCP(ctx context.Context, localDir, remotePath str
 		if err != nil {
 			return err
 		}
-		// Upload may succeed server-side but return an error (e.g. malformed
-		// response). If the file landed under its local name we can still
-		// rename it to the intended remote name, so only propagate the
-		// upload error when the rename fallback also fails.
-		needsRename := filepath.Base(p) != path.Base(remoteCurrent)
 		if _, err := c.Upload(ctx, params, p); err != nil {
-			if !needsRename {
-				return err
-			}
-			if renameErr := c.RenameUploaded(ctx, parent, filepath.Base(p), path.Base(remoteCurrent)); renameErr != nil {
-				return err
-			}
-		} else if needsRename {
-			if err := c.RenameUploaded(ctx, parent, filepath.Base(p), path.Base(remoteCurrent)); err != nil {
-				return err
-			}
+			return err
 		}
 		uploaded++
 		return nil
@@ -99,23 +89,6 @@ func (c *Client) UploadRecursiveCP(ctx context.Context, localDir, remotePath str
 		return nil, err
 	}
 	return map[string]any{"local_path": localDir, "remote_path": targetRoot, "uploaded_files": uploaded, "skipped_files": skipped}, nil
-}
-
-// RenameUploaded renames a file at parent/oldName to newName on the remote.
-func (c *Client) RenameUploaded(ctx context.Context, parent, oldName, newName string) error {
-	if oldName == newName {
-		return nil
-	}
-	p := JoinRemote(parent, oldName)
-	pj, err := EncodeJSON([]string{p})
-	if err != nil {
-		return err
-	}
-	nj, err := EncodeJSON([]string{newName})
-	if err != nil {
-		return err
-	}
-	return c.Call(ctx, APIRename, "rename", url.Values{"path": {pj}, "name": {nj}}, nil)
 }
 
 func (c *Client) buildUploadParams(ctx context.Context, remoteDir string, parents, overwrite, skipExisting bool) (map[string]string, error) {

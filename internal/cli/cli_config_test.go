@@ -15,7 +15,7 @@ func TestCLIConfigShowRedactsPassword(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 	var out, errOut bytes.Buffer
-	cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
+	cmd, _ := newRootCmd(strings.NewReader(""), &out, &errOut)
 	cmd.SetArgs([]string{"--config", cfg, "cli-config", "show"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
@@ -33,7 +33,7 @@ func TestCLIConfigInitCreatesConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := filepath.Join(tmpDir, "config")
 	var out, errOut bytes.Buffer
-	cmd := newRootCmd(strings.NewReader(""), &out, &errOut)
+	cmd, _ := newRootCmd(strings.NewReader(""), &out, &errOut)
 	cmd.SetArgs([]string{
 		"--config", cfg,
 		"--endpoint", "https://example.com:5001",
