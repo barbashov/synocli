@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+- `info storage`: storage pools, per-RAID member states, and rebuild/scrub progress (percent + step) from `SYNO.Storage.CGI.Storage load_info`. Includes `--watch` (with `--interval`, default 10s) that redraws on a TTY, computes average rebuild rate and ETA, and exits on its own once no background action remains; with `--json` each poll emits an NDJSON snapshot envelope (`event: "snapshot"`, plus `rate_percent_per_hour`/`eta_seconds` when computable), like `ds list --watch`.
+- `info` / `info utilization` JSON output now includes the new storage fields (`progress`, `raids`, `device_type`, `pool_path`, `dev_path`, `is_actioning`) on pools and volumes.
+
 ### Security
 - Credentials and session tokens no longer leak into error output: transport-level failures (TLS, DNS, timeout, connection refused) previously embedded the full request URL — including `passwd` on login and `_sid` on every API call — in stderr, `--json` error envelopes, and `--debug` logs. URLs in such errors are now redacted everywhere.
 - Cached sessions (`reuse_session`) are now bound to the endpoint and user they were issued for. A cached SID is never sent to a different `--endpoint` and never silently reused for a different `--user`. The session file format changed to JSON; old bare-SID session files are discarded (one extra login after upgrade).
@@ -36,6 +40,7 @@ The format is based on Keep a Changelog and uses Semantic Versioning.
 
 ### Changed
 - `fs list` and `fs tasks` now list everything by default (`--limit` default changed from 1000/100 to 0 = all), per the project no-truncation rule.
+- `info`: the Volumes RAID column now shows the actual RAID level (`device_type`, e.g. "RAID 5") instead of DSM's pool topology field (`raidType`, which is "single" even for RAID 5); the STATUS column appends the rebuild percent when a repair is running (e.g. "repairing 7.10%").
 
 ### Agent Notes
 ```yaml
@@ -43,17 +48,22 @@ breaking_changes:
   - "Session cache file format changed to JSON bound to endpoint+user; existing sessions are invalidated once (transparent re-login)."
   - "API discovery failure is now a hard connection_error instead of a silent fallback to default API paths."
   - "cli-update: unparseable current versions (e.g. dev builds) are no longer offered/applied as updates."
-commands_added: []
+commands_added:
+  - "info storage: pools, RAID member states, rebuild/scrub progress; --watch mode with rate/ETA."
 commands_changed:
   - "fs get: nonexistent paths now fail with synology_error/408 instead of rendering a fake 0 B entry."
   - "fs md5 / fs extract: exactly one positional argument is now required."
   - "info / info utilization / info disks: server errors now emit code synology_error with details.synology_code."
-flags_added: []
+flags_added:
+  - "info storage --watch: continuous polling; exits when no background action remains."
+  - "info storage --interval: polling interval for --watch (default 10s)."
 flags_changed:
   - "fs list --limit: default 1000 -> 0 (all entries)."
   - "fs tasks --limit: default 100 -> 0 (all tasks)."
   - "--max-wait (ds wait, fs copy/move/search and task-start commands): negative values rejected."
 behavior_changes:
+  - "info: Volumes RAID column now shows the RAID level (device_type) instead of raidType; volume STATUS appends rebuild percent."
+  - "info / info utilization --json: storage pools and volumes gain progress, raids, device_type, pool_path, dev_path, is_actioning fields."
   - "--json: validation/usage errors raised before session setup now emit the standard error envelope on stdout."
   - "Transport-error messages redact URL query strings (passwd/_sid) everywhere, including --debug."
   - "reuse_session: cached SID is only reused when endpoint and user match; user is adopted from the cached session when not specified (auth whoami now reports it)."

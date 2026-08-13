@@ -56,20 +56,53 @@ type LoadInfo struct {
 }
 
 type Volume struct {
-	ID       string `json:"id"`
-	VolPath  string `json:"vol_path"`
-	Status   string `json:"status"`
-	FSType   string `json:"fs_type"`
-	RAIDType string `json:"raidType"`
-	Size     Size   `json:"size"`
+	ID          string   `json:"id"`
+	VolPath     string   `json:"vol_path"`
+	Status      string   `json:"status"`
+	FSType      string   `json:"fs_type"`
+	RAIDType    string   `json:"raidType"`
+	DeviceType  string   `json:"device_type"` // RAID level, e.g. "raid_5"; RAIDType is pool topology
+	PoolPath    string   `json:"pool_path"`
+	DevPath     string   `json:"dev_path"`
+	IsActioning bool     `json:"is_actioning"`
+	Progress    Progress `json:"progress"`
+	Size        Size     `json:"size"`
 }
 
 type Pool struct {
-	ID       string   `json:"id"`
-	Status   string   `json:"status"`
-	RAIDType string   `json:"raidType"`
-	Disks    []string `json:"disks"`
-	Size     Size     `json:"size"`
+	ID          string   `json:"id"`
+	Status      string   `json:"status"`
+	RAIDType    string   `json:"raidType"`
+	DeviceType  string   `json:"device_type"`
+	Disks       []string `json:"disks"`
+	IsActioning bool     `json:"is_actioning"`
+	Progress    Progress `json:"progress"`
+	Raids       []Raid   `json:"raids"`
+	Size        Size     `json:"size"`
+}
+
+// Progress reports an in-flight background action on a pool or volume
+// (rebuild, parity check, scrub). Percent keeps DSM's string form,
+// e.g. "7.10"; empty or "-1" when idle.
+type Progress struct {
+	Percent string `json:"percent"`
+	Step    string `json:"step"`
+}
+
+// Raid is one md device backing a pool. During a repair the affected member
+// carries Status "rebuild" while the pool itself reports "repairing".
+type Raid struct {
+	RaidPath          string       `json:"raidPath"` // e.g. "/dev/md2"
+	HasParity         bool         `json:"hasParity"`
+	NormalDevCount    int          `json:"normalDevCount"`
+	DesignedDiskCount int          `json:"designedDiskCount"`
+	Devices           []RaidDevice `json:"devices"`
+}
+
+type RaidDevice struct {
+	ID     string `json:"id"`     // e.g. "sdb"
+	Slot   int    `json:"slot"`   // 0-based md slot
+	Status string `json:"status"` // "normal" | "rebuild" | ...
 }
 
 type Disk struct {

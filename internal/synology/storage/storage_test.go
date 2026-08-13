@@ -25,10 +25,23 @@ const fixtureLoadInfoBody = `{
        "container":{"order":0,"str":"DS1511+","type":"internal"}}
     ],
     "storagePools": [
-      {"id":"reuse_1","status":"normal","raidType":"single","disks":["sda","sdb","sdc","sdd","sde"],"size":{"total":"11983029272576","used":"11983029272576"}}
+      {"id":"reuse_1","status":"repairing","raidType":"single","device_type":"raid_5","disks":["sda","sdb","sdc","sdd","sde"],
+       "is_actioning":true,"progress":{"percent":"7.10","step":"raid_parity_checking"},
+       "raids":[
+         {"raidPath":"/dev/md2","hasParity":true,"normalDevCount":4,"designedDiskCount":5,
+          "devices":[
+            {"id":"sde","slot":4,"status":"normal"},
+            {"id":"sdb","slot":1,"status":"rebuild"},
+            {"id":"sda","slot":0,"status":"normal"}
+          ]}
+       ],
+       "size":{"total":"11983029272576","used":"11983029272576"}}
     ],
     "volumes": [
-      {"id":"volume_1","vol_path":"/volume1","status":"normal","fs_type":"ext4","raidType":"single","size":{"total":"11794790506496","used":"6529575075840"}}
+      {"id":"volume_1","vol_path":"/volume1","status":"repairing","fs_type":"ext4","raidType":"single","device_type":"raid_5",
+       "pool_path":"reuse_1","dev_path":"/dev/md2","is_actioning":true,
+       "progress":{"percent":"7.10","step":"raid_parity_checking"},
+       "size":{"total":"11794790506496","used":"6529575075840"}}
     ]
   }
 }`
@@ -111,8 +124,32 @@ func TestLoadInfoDecodesFixture(t *testing.T) {
 	if info.Volumes[0].Size.Used.Int64() != 6529575075840 {
 		t.Errorf("Volume used = %d", info.Volumes[0].Size.Used.Int64())
 	}
+	v0 := info.Volumes[0]
+	if v0.DeviceType != "raid_5" || v0.PoolPath != "reuse_1" || v0.DevPath != "/dev/md2" || !v0.IsActioning {
+		t.Errorf("Volume[0] extras = %+v", v0)
+	}
+	if v0.Progress.Percent != "7.10" || v0.Progress.Step != "raid_parity_checking" {
+		t.Errorf("Volume[0] progress = %+v", v0.Progress)
+	}
 	if len(info.StoragePools) != 1 || len(info.StoragePools[0].Disks) != 5 {
 		t.Fatalf("Pools = %+v", info.StoragePools)
+	}
+	p0 := info.StoragePools[0]
+	if p0.Status != "repairing" || p0.DeviceType != "raid_5" || !p0.IsActioning {
+		t.Errorf("Pool[0] = %+v", p0)
+	}
+	if p0.Progress.Percent != "7.10" || p0.Progress.Step != "raid_parity_checking" {
+		t.Errorf("Pool[0] progress = %+v", p0.Progress)
+	}
+	if len(p0.Raids) != 1 {
+		t.Fatalf("Pool[0] raids = %+v", p0.Raids)
+	}
+	r0 := p0.Raids[0]
+	if r0.RaidPath != "/dev/md2" || !r0.HasParity || r0.NormalDevCount != 4 || r0.DesignedDiskCount != 5 {
+		t.Errorf("Raid[0] = %+v", r0)
+	}
+	if len(r0.Devices) != 3 || r0.Devices[1].ID != "sdb" || r0.Devices[1].Slot != 1 || r0.Devices[1].Status != "rebuild" {
+		t.Errorf("Raid[0] devices = %+v", r0.Devices)
 	}
 	if len(info.Disks) != 2 || info.Disks[0].ID != "sda" || info.Disks[1].Temp != 35 {
 		t.Fatalf("Disks = %+v", info.Disks)
@@ -223,6 +260,25 @@ func TestLoadInfoAcceptsNumericSizes(t *testing.T) {
 	}
 	if info.Volumes[0].Size.Total.Int64() != 1000 || info.Volumes[0].Size.Used.Int64() != 250 {
 		t.Errorf("sizes = %+v", info.Volumes[0].Size)
+	}
+}
+
+func TestLoadInfoHealthyPoolWithoutProgress(t *testing.T) {
+	// Healthy pools/volumes omit progress and raids entirely; decode must
+	// yield zero values, not errors.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"data":{"storagePools":[{"id":"reuse_1","status":"normal","device_type":"raid_5"}],"volumes":[{"id":"v","vol_path":"/volume1","status":"normal"}]}}`))
+	})
+	info, err := c.LoadInfo(context.Background())
+	if err != nil {
+		t.Fatalf("LoadInfo: %v", err)
+	}
+	p := info.StoragePools[0]
+	if p.IsActioning || p.Progress.Percent != "" || p.Progress.Step != "" || len(p.Raids) != 0 {
+		t.Errorf("pool = %+v", p)
+	}
+	if info.Volumes[0].Progress.Percent != "" || info.Volumes[0].IsActioning {
+		t.Errorf("volume = %+v", info.Volumes[0])
 	}
 }
 

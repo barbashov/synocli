@@ -25,6 +25,7 @@ func newInfoCmd(ac *appContext) *cobra.Command {
 	}
 	cmd.AddCommand(newInfoUtilizationCmd(ac))
 	cmd.AddCommand(newInfoDisksCmd(ac))
+	cmd.AddCommand(newInfoStorageCmd(ac))
 	return cmd
 }
 
@@ -301,12 +302,12 @@ func printVolumes(w io.Writer, vols []storage.Volume) {
 		used := v.Size.Used.Int64()
 		rows = append(rows, []string{
 			displayOrDash(v.VolPath),
-			displayOrDash(v.RAIDType),
+			formatRAIDLevel(v.DeviceType, v.RAIDType),
 			displayOrDash(v.FSType),
 			cmdutil.FormatBytes(used),
 			cmdutil.FormatBytes(total),
 			cmdutil.FormatPercent(used, total),
-			displayOrDash(v.Status),
+			volumeStatusCell(v),
 		})
 	}
 	cmdutil.PrintTable(w, []string{"PATH", "RAID", "FS", "USED", "TOTAL", "USE%", "STATUS"}, rows)
