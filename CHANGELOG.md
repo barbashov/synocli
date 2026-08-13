@@ -6,6 +6,19 @@ The format is based on Keep a Changelog and uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Agent Notes
+```yaml
+breaking_changes: []
+commands_added: []
+commands_changed: []
+flags_added: []
+flags_changed: []
+behavior_changes: []
+skill_update_action: "No changes yet."
+```
+
+## [0.5.0] - 2026-08-13
+
 ### Added
 - `info storage`: storage pools, per-RAID member states, and rebuild/scrub progress (percent + step) from `SYNO.Storage.CGI.Storage load_info`. Includes `--watch` (with `--interval`, default 10s) that redraws on a TTY, computes average rebuild rate and ETA, and exits on its own once no background action remains; with `--json` each poll emits an NDJSON snapshot envelope (`event: "snapshot"`, plus `rate_percent_per_hour`/`eta_seconds` when computable), like `ds list --watch`.
 - `info` / `info utilization` JSON output now includes the new storage fields (`progress`, `raids`, `device_type`, `pool_path`, `dev_path`, `is_actioning`) on pools and volumes.
@@ -71,7 +84,7 @@ behavior_changes:
   - "Recursive fs upload fails on symlinks/FIFOs/devices inside the tree."
   - "Remote path arguments are normalized (trailing slashes stripped) across all fs commands."
   - "HTTPS_PROXY/HTTP_PROXY are now honored."
-skill_update_action: "Update fs list / fs tasks descriptions (default now lists everything); note fs md5/extract take exactly one path; note --json envelope now covers early validation errors."
+skill_update_action: "Add the new info storage command (pools/RAID members/rebuild progress, --watch with rate+ETA, NDJSON snapshots with --json). Update fs list / fs tasks descriptions (default now lists everything); note fs md5/extract take exactly one path; note --json envelope now covers early validation errors."
 ```
 
 ## [0.4.12] - 2026-05-29
